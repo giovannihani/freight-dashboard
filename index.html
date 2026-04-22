@@ -1,0 +1,498 @@
+import { useState, useEffect } from "react";
+
+const STORAGE_KEY = "freight-rates-v5";
+const emptyForm = {
+  forwarder: "", line: "", pol: "", pod: "",
+  freight20: "", freight40hq: "",
+  thc20: "", thc40hq: "",
+  qty20: "", qty40hq: "",
+  otherCharges: "", currency: "USD",
+  etd: "", cutoff: "", validityDate: "",
+  freeDays: "", transitTime: "", remarks: ""
+};
+const currencies = ["USD", "EGP", "EUR", "CNY"];
+
+function calcTotal(r, type = "20") {
+  const f = parseFloat(type === "20" ? r.freight20 : r.freight40hq) || 0;
+  const t = parseFloat(type === "20" ? r.thc20 : r.thc40hq) || 0;
+  const o = parseFloat(r.otherCharges) || 0;
+  const q20 = parseInt(r.qty20) || 1;
+  const q40 = parseInt(r.qty40hq) || 1;
+  if (type === "20") return (f + t) * q20 + o;
+  return (f + t) * q40 + o;
+}
+
+function calcGrand(r) {
+  const f20 = parseFloat(r.freight20) || 0;
+  const t20 = parseFloat(r.thc20) || 0;
+  const f40 = parseFloat(r.freight40hq) || 0;
+  const t40 = parseFloat(r.thc40hq) || 0;
+  const q20 = parseInt(r.qty20) || 0;
+  const q40 = parseInt(r.qty40hq) || 0;
+  const o = parseFloat(r.otherCharges) || 0;
+  return (f20 + t20) * q20 + (f40 + t40) * q40 + o;
+}
+
+function Badge({ label, color }) {
+  const c = { green: "bg-green-100 text-green-800 border border-green-300", purple: "bg-purple-100 text-purple-800 border border-purple-300" };
+  return <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${c[color]}`}>{label}</span>;
+}
+
+function Field({ label, labelColor = "text-gray-500", children }) {
+  return <div><label className={`text-xs font-medium ${labelColor}`}>{label}</label>{children}</div>;
+}
+
+export default function App() {
+  const [quotes, setQuotes] = useState([]);
+  const [drafts, setDrafts] = useState([]);
+  const [form, setForm] = useState({ ...emptyForm });
+  const [editId, setEditId] = useState(null);
+  const [editDraftId, setEditDraftId] = useState(null);
+  const [tab, setTab] = useState("dashboard");
+  const [pasteText, setPasteText] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState("");
+  const [parsed, setParsed] = useState(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [sortBy, setSortBy] = useState("grand");
+  const [formMode, setFormMode] = useState(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem(STORAGE_KEY);
+      if (s) { const d = JSON.parse(s); setQuotes(d.quotes || []); setDrafts(d.drafts || []); }
+    } catch {}
+  }, []);
+
+  const persist = (q, dr) => {
+    const nq = q ?? quotes, nd = dr ?? drafts;
+    setQuotes(nq); setDrafts(nd);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ quotes: nq, drafts: nd })); } catch {}
+  };
+
+  const upd = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const inp = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
+
+  const resetForm = () => { setForm({ ...emptyForm }); setEditId(null); setEditDraftId(null); setFormMode(null); };
+
+  const enrichQuote = (f) => ({
+    ...f,
+    id: editId || Date.now(),
+    total20: calcTotal(f, "20"),
+    total40: calcTotal(f, "40"),
+    grand: calcGrand(f)
+  });
+
+  const handleSaveQuote = () => {
+    if (!form.forwarder.trim()) { alert("Forwarder name is required."); return; }
+    const rec = enrichQuote(form);
+    const updated = editId ? quotes.map(q => q.id === editId ? rec : q) : [...quotes, rec];
+    persist(updated, null);
+    resetForm();
+    setTab("dashboard");
+  };
+
+  const handleSaveDraft = () => {
+    if (!form.forwarder.trim() && !form.line.trim()) { alert("Enter at least a forwarder or line name."); return; }
+    const rec = { ...enrichQuote(form), id: editDraftId || Date.now() };
+    const updated = editDraftId ? drafts.map(d => d.id === editDraftId ? rec : d) : [...drafts, rec];
+    persist(null, updated);
+    resetForm();
+    setTab("drafts");
+  };
+
+  const handlePromoteDraft = (d) => {
+    const rec = { ...d, id: Date.now(), total20: calcTotal(d,"20"), total40: calcTotal(d,"40"), grand: calcGrand(d) };
+    persist([...quotes, rec], drafts.filter(x => x.id !== d.id));
+    setTab("dashboard");
+  };
+
+  const handleEditQuote = (q) => { setForm({ ...emptyForm, ...q }); setEditId(q.id); setFormMode("quote"); setTab("dashboard"); };
+  const handleEditDraft = (d) => { setForm({ ...emptyForm, ...d }); setEditDraftId(d.id); setFormMode("draft"); setTab("drafts"); };
+  const handleDeleteQuote = (id) => persist(quotes.filter(q => q.id !== id), null);
+  const handleDeleteDraft = (id) => persist(null, drafts.filter(d => d.id !== id));
+
+  const sorted = [...quotes]
+    .map(q => ({ ...q, total20: calcTotal(q,"20"), total40: calcTotal(q,"40"), grand: calcGrand(q) }))
+    .sort((a,b) =>
+      sortBy === "grand" ? a.grand - b.grand :
+      sortBy === "total20" ? a.total20 - b.total20 :
+      sortBy === "total40" ? a.total40 - b.total40 :
+      sortBy === "etd" ? (a.etd||"").localeCompare(b.etd||"") :
+      (a.transitTime||0) - (b.transitTime||0)
+    );
+
+  const bestGrandId = sorted.filter(q=>q.grand>0).sort((a,b)=>a.grand-b.grand)[0]?.id;
+  const best20Id = sorted.filter(q=>q.total20>0).sort((a,b)=>a.total20-b.total20)[0]?.id;
+  const best40Id = sorted.filter(q=>q.total40>0).sort((a,b)=>a.total40-b.total40)[0]?.id;
+
+  const handleParse = async () => {
+    if (!pasteText.trim()) return;
+    setParsing(true); setParseError(""); setParsed(null);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": process.env.REACT_APP_ANTHROPIC_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: "claude-opus-4-5", max_tokens: 1000,
+          messages: [{ role: "user", content: `Extract freight quote data from the text and return ONLY a JSON array. Keys: forwarder, line, pol, pod, freight20, freight40hq, thc20, thc40hq, qty20, qty40hq, otherCharges, currency (default USD), etd (YYYY-MM-DD), cutoff (YYYY-MM-DD), validityDate (YYYY-MM-DD), freeDays, transitTime, remarks. Empty string if not found. Raw JSON only.\n\n${pasteText}` }]
+        })
+      });
+      const data = await res.json();
+      const text = data.content?.map(b => b.text||"").join("") || "";
+      const arr = JSON.parse(text.replace(/```json|```/g,"").trim());
+      if (!Array.isArray(arr)) throw new Error();
+      setParsed(arr.map(q => ({ ...emptyForm, ...q, id: Date.now()+Math.random(), total20: calcTotal(q,"20"), total40: calcTotal(q,"40"), grand: calcGrand(q) })));
+    } catch { setParseError("Could not parse. Check your input and try again."); }
+    setParsing(false);
+  };
+
+  const handleConfirmParsed = (asDraft=false) => {
+    if (!parsed) return;
+    if (asDraft) persist(null, [...drafts, ...parsed]);
+    else persist([...quotes, ...parsed], null);
+    setParsed(null); setPasteText(""); setPasteOpen(false);
+  };
+
+  const handleExportCSV = () => {
+    if (!sorted.length) return;
+    const cols = ["#","Forwarder","Line","POL","POD","Qty 20","20 Rate","20 THC","Total 20","Qty 40HQ","40HQ Rate","40HQ THC","Total 40HQ","Other","Grand Total","CCY","ETD","Cutoff","Free Days","Transit","Validity","Remarks"];
+    const rows = sorted.map((q,i) => [i+1,q.forwarder,q.line||"",q.pol||"",q.pod||"",q.qty20||"",q.freight20||"",q.thc20||"",q.total20||"",q.qty40hq||"",q.freight40hq||"",q.thc40hq||"",q.total40||"",q.otherCharges||"",q.grand||"",q.currency,q.etd||"",q.cutoff||"",q.freeDays||"",q.transitTime||"",q.validityDate||"",q.remarks||""]);
+    const csv = [cols,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv],{type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download="freight_rates.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportHTML = () => {
+    if (!sorted.length) return;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Freight Rate Comparison</title>
+<style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h2{color:#1e3a5f}table{border-collapse:collapse;width:100%}th{background:#1e3a5f;color:white;padding:6px 8px;text-align:left;white-space:nowrap}td{padding:5px 8px;border-bottom:1px solid #eee}.best{background:#f0fdf4;font-weight:bold;color:#15803d}.b20{background:#eff6ff}.b40{background:#f5f3ff}.tot{font-weight:bold}</style>
+</head><body><h2>🚢 Freight Rate Comparison</h2><p>Generated: ${new Date().toLocaleString()}</p>
+<table><thead><tr>${["#","Forwarder","Line","POL","POD","Qty 20","20 Rate","20 THC","Total 20","Qty 40HQ","40HQ Rate","40HQ THC","Total 40HQ","Other","Grand Total","CCY","ETD","Cutoff","Free Days","Transit (d)","Validity","Remarks"].map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>
+${sorted.map((q,i)=>{const isB=q.id===bestGrandId;return`<tr class="${isB?"best":""}"><td>${i+1}</td><td><b>${q.forwarder}</b>${isB?' ⭐':''}</td><td>${q.line||"—"}</td><td>${q.pol||"—"}</td><td>${q.pod||"—"}</td><td class="b20">${q.qty20||"—"}</td><td class="b20">${q.freight20||"—"}</td><td class="b20">${q.thc20||"—"}</td><td class="b20 tot">${q.total20||"—"}</td><td class="b40">${q.qty40hq||"—"}</td><td class="b40">${q.freight40hq||"—"}</td><td class="b40">${q.thc40hq||"—"}</td><td class="b40 tot">${q.total40||"—"}</td><td>${q.otherCharges||"—"}</td><td class="tot">${q.grand||"—"}</td><td>${q.currency}</td><td>${q.etd||"—"}</td><td style="color:#ea580c">${q.cutoff||"—"}</td><td>${q.freeDays||"—"}</td><td>${q.transitTime||"—"}</td><td>${q.validityDate||"—"}</td><td>${q.remarks||"—"}</td></tr>`;}).join("")}
+</tbody></table></body></html>`;
+    const blob = new Blob([html],{type:"text/html"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download="freight_rates.html"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const FormPanel = ({ mode }) => (
+    <div className={`bg-white rounded-2xl shadow-md p-5 mb-5 border ${mode==="draft"?"border-yellow-200":"border-blue-100"}`}>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-base font-bold text-gray-700">
+          {mode==="draft"?(editDraftId?"✏️ Edit Draft":"📝 New Draft"):(editId?"✏️ Edit Quote":"➕ New Quote")}
+        </h2>
+        <button onClick={resetForm} className="text-gray-400 hover:text-red-500 text-lg font-bold">✕</button>
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="col-span-2"><Field label="Forwarder Name *"><input className={inp} value={form.forwarder} onChange={e=>upd("forwarder",e.target.value)} placeholder="e.g. Transmar"/></Field></div>
+        <div className="col-span-2"><Field label="Shipping Line"><input className={inp} value={form.line} onChange={e=>upd("line",e.target.value)} placeholder="e.g. MSC"/></Field></div>
+        <div className="col-span-2 md:col-span-1"><Field label="POL"><input className={inp} value={form.pol} onChange={e=>upd("pol",e.target.value)} placeholder="e.g. Shanghai"/></Field></div>
+        <div className="col-span-2 md:col-span-1"><Field label="POD"><input className={inp} value={form.pod} onChange={e=>upd("pod",e.target.value)} placeholder="e.g. Alexandria"/></Field></div>
+        <Field label="Qty 20ft" labelColor="text-blue-600 font-bold"><input type="number" className={inp} value={form.qty20} onChange={e=>upd("qty20",e.target.value)} placeholder="0"/></Field>
+        <Field label="20ft Freight Rate" labelColor="text-blue-600 font-bold"><input type="number" className={inp} value={form.freight20} onChange={e=>upd("freight20",e.target.value)} placeholder="0"/></Field>
+        <Field label="20ft THC" labelColor="text-blue-600 font-bold"><input type="number" className={inp} value={form.thc20} onChange={e=>upd("thc20",e.target.value)} placeholder="0"/></Field>
+        <div className="bg-blue-50 rounded-lg px-3 py-2 flex flex-col justify-center">
+          <span className="text-xs text-blue-500">Total 20ft</span>
+          <span className="text-base font-bold text-blue-700">{calcTotal(form,"20").toLocaleString()} {form.currency}</span>
+        </div>
+        <Field label="Qty 40HQ" labelColor="text-purple-600 font-bold"><input type="number" className={inp} value={form.qty40hq} onChange={e=>upd("qty40hq",e.target.value)} placeholder="0"/></Field>
+        <Field label="40HQ Freight Rate" labelColor="text-purple-600 font-bold"><input type="number" className={inp} value={form.freight40hq} onChange={e=>upd("freight40hq",e.target.value)} placeholder="0"/></Field>
+        <Field label="40HQ THC" labelColor="text-purple-600 font-bold"><input type="number" className={inp} value={form.thc40hq} onChange={e=>upd("thc40hq",e.target.value)} placeholder="0"/></Field>
+        <div className="bg-purple-50 rounded-lg px-3 py-2 flex flex-col justify-center">
+          <span className="text-xs text-purple-500">Total 40HQ</span>
+          <span className="text-base font-bold text-purple-700">{calcTotal(form,"40").toLocaleString()} {form.currency}</span>
+        </div>
+        <Field label="Other Charges"><input type="number" className={inp} value={form.otherCharges} onChange={e=>upd("otherCharges",e.target.value)} placeholder="0"/></Field>
+        <Field label="Currency"><select className={inp} value={form.currency} onChange={e=>upd("currency",e.target.value)}>{currencies.map(c=><option key={c}>{c}</option>)}</select></Field>
+        <Field label="ETD"><input type="date" className={inp} value={form.etd} onChange={e=>upd("etd",e.target.value)}/></Field>
+        <Field label="Cutoff Date"><input type="date" className={inp} value={form.cutoff} onChange={e=>upd("cutoff",e.target.value)}/></Field>
+        <Field label="Validity Date"><input type="date" className={inp} value={form.validityDate} onChange={e=>upd("validityDate",e.target.value)}/></Field>
+        <Field label="Free Days"><input type="number" className={inp} value={form.freeDays} onChange={e=>upd("freeDays",e.target.value)} placeholder="e.g. 14"/></Field>
+        <Field label="Transit Time (days)"><input type="number" className={inp} value={form.transitTime} onChange={e=>upd("transitTime",e.target.value)} placeholder="e.g. 30"/></Field>
+        <div className="col-span-2 md:col-span-4"><Field label="Remarks"><input className={inp} value={form.remarks} onChange={e=>upd("remarks",e.target.value)} placeholder="Special conditions..."/></Field></div>
+      </div>
+      <div className="mt-4 flex items-center gap-3 flex-wrap">
+        <div className="bg-gray-800 text-white rounded-lg px-4 py-2">
+          <div className="text-xs text-gray-300">Grand Total</div>
+          <div className="text-lg font-bold">{calcGrand(form).toLocaleString()} {form.currency}</div>
+        </div>
+        <div className="flex gap-2 ml-auto flex-wrap">
+          {mode==="quote"?(
+            <>
+              <button onClick={handleSaveDraft} className="bg-yellow-400 hover:bg-yellow-500 text-white text-sm font-semibold px-4 py-2 rounded-lg">💾 Save as Draft</button>
+              <button onClick={handleSaveQuote} className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">{editId?"Update Quote":"✅ Add Quote"}</button>
+            </>
+          ):(
+            <>
+              <button onClick={handleSaveDraft} className="bg-yellow-400 hover:bg-yellow-500 text-white text-sm font-semibold px-4 py-2 rounded-lg">{editDraftId?"Update Draft":"💾 Save Draft"}</button>
+              <button onClick={handleSaveQuote} className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">✅ Confirm as Quote</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-7xl mx-auto">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">🚢 Freight Rate Dashboard</h1>
+            <p className="text-sm text-gray-500">{quotes.length} quote{quotes.length!==1?"s":""} · {drafts.length} draft{drafts.length!==1?"s":""}</p>
+          </div>
+          <div className="flex gap-2 flex-wrap items-center">
+
+            {/* Dropdown New button */}
+            <div className="relative">
+              <button onClick={()=>setDropdownOpen(p=>!p)}
+                className="text-sm font-semibold px-4 py-2 rounded-lg bg-blue-600 text-white flex items-center gap-1 hover:bg-blue-700">
+                ＋ New <span className="text-blue-200 text-xs">▾</span>
+              </button>
+              {dropdownOpen && (
+                <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                  <button onClick={()=>{setTab("dashboard");setFormMode("quote");resetForm();setDropdownOpen(false);}}
+                    className="w-full text-left px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-blue-50 border-b border-gray-100 flex items-center gap-2">
+                    ✅ New Quote
+                  </button>
+                  <button onClick={()=>{setTab("drafts");setFormMode("draft");resetForm();setDropdownOpen(false);}}
+                    className="w-full text-left px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-yellow-50 flex items-center gap-2">
+                    📝 New Draft
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button onClick={()=>{setPasteOpen(p=>!p);setTab("dashboard");}}
+              className={`text-sm font-semibold px-4 py-2 rounded-lg border ${pasteOpen?"bg-purple-700 text-white border-purple-700":"bg-white text-purple-700 border-purple-400"}`}>
+              🤖 {pasteOpen?"Hide Parser":"AI Parser"}
+            </button>
+            <button onClick={()=>setTab(tab==="drafts"?"dashboard":"drafts")}
+              className={`text-sm font-semibold px-4 py-2 rounded-lg border ${tab==="drafts"?"bg-gray-700 text-white border-gray-700":"bg-white text-gray-600 border-gray-300"}`}>
+              📋 Drafts {drafts.length>0&&<span className="ml-1 bg-yellow-400 text-white text-xs px-1.5 py-0.5 rounded-full">{drafts.length}</span>}
+            </button>
+            {quotes.length>0&&(
+              <div className="flex gap-1">
+                <button onClick={handleExportCSV} className="text-sm font-semibold px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">⬇ CSV</button>
+                <button onClick={handleExportHTML} className="text-sm font-semibold px-3 py-2 rounded-lg bg-teal-600 text-white hover:bg-teal-700">⬇ HTML</button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* AI Parser */}
+        {pasteOpen&&(
+          <div className="bg-white rounded-2xl shadow-md p-5 mb-5 border border-purple-100">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-base font-bold text-gray-700">🤖 AI Quote Parser</h2>
+              <button onClick={()=>{setPasteOpen(false);setParsed(null);setPasteText("");}} className="text-gray-400 hover:text-red-500 text-lg font-bold">✕</button>
+            </div>
+            <p className="text-xs text-gray-400 mb-3">Paste any email, WhatsApp, or rate sheet — Claude extracts all fields automatically.</p>
+            <textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm h-32 focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none"
+              placeholder={"Transmar — MSC, ETD 15 May, cutoff 10 May, 2x20ft $650 THC $110, 1x40HQ $950 THC $180, 14 free days, 28d transit, valid 30 May."}
+              value={pasteText} onChange={e=>{setPasteText(e.target.value);setParsed(null);setParseError("");}}/>
+            {parseError&&<p className="text-red-500 text-xs mt-1">{parseError}</p>}
+            <button onClick={handleParse} disabled={parsing||!pasteText.trim()} className="mt-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white text-sm font-semibold px-5 py-2 rounded-lg">
+              {parsing?"Parsing...":"Parse →"}
+            </button>
+            {parsed&&(
+              <div className="mt-4">
+                <p className="text-sm font-bold text-gray-700 mb-2">✅ {parsed.length} quote{parsed.length!==1?"s":""} found</p>
+                <div className="overflow-x-auto rounded-xl border border-gray-200 mb-3">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-100 text-gray-600 uppercase">
+                      <tr>{["Forwarder","Line","POL","POD","Qty20","20Rate","20THC","Tot20","Qty40","40Rate","40THC","Tot40","Other","Grand","CCY","ETD","Cutoff","Free","Transit","Validity","Remarks"].map(h=>(
+                        <th key={h} className="px-2 py-1.5 text-left whitespace-nowrap">{h}</th>
+                      ))}</tr>
+                    </thead>
+                    <tbody>
+                      {parsed.map((q,i)=>(
+                        <tr key={i} className="border-t border-gray-100">
+                          <td className="px-2 py-1.5 font-semibold">{q.forwarder||"—"}</td>
+                          <td className="px-2 py-1.5">{q.line||"—"}</td>
+                          <td className="px-2 py-1.5">{q.pol||"—"}</td>
+                          <td className="px-2 py-1.5">{q.pod||"—"}</td>
+                          <td className="px-2 py-1.5">{q.qty20||"—"}</td>
+                          <td className="px-2 py-1.5">{q.freight20||"—"}</td>
+                          <td className="px-2 py-1.5">{q.thc20||"—"}</td>
+                          <td className="px-2 py-1.5 font-bold text-blue-700">{q.total20?.toLocaleString()||"—"}</td>
+                          <td className="px-2 py-1.5">{q.qty40hq||"—"}</td>
+                          <td className="px-2 py-1.5">{q.freight40hq||"—"}</td>
+                          <td className="px-2 py-1.5">{q.thc40hq||"—"}</td>
+                          <td className="px-2 py-1.5 font-bold text-purple-700">{q.total40?.toLocaleString()||"—"}</td>
+                          <td className="px-2 py-1.5">{q.otherCharges||"—"}</td>
+                          <td className="px-2 py-1.5 font-bold">{q.grand?.toLocaleString()||"—"}</td>
+                          <td className="px-2 py-1.5">{q.currency}</td>
+                          <td className="px-2 py-1.5">{q.etd||"—"}</td>
+                          <td className="px-2 py-1.5">{q.cutoff||"—"}</td>
+                          <td className="px-2 py-1.5">{q.freeDays?`${q.freeDays}d`:"—"}</td>
+                          <td className="px-2 py-1.5">{q.transitTime?`${q.transitTime}d`:"—"}</td>
+                          <td className="px-2 py-1.5">{q.validityDate||"—"}</td>
+                          <td className="px-2 py-1.5 max-w-xs truncate">{q.remarks||"—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={()=>handleConfirmParsed(false)} className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">✅ Add as Quotes</button>
+                  <button onClick={()=>handleConfirmParsed(true)} className="bg-yellow-400 hover:bg-yellow-500 text-white text-sm font-semibold px-4 py-2 rounded-lg">💾 Save as Drafts</button>
+                  <button onClick={()=>setParsed(null)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold px-4 py-2 rounded-lg">✕ Discard</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Form */}
+        {formMode&&<FormPanel mode={formMode}/>}
+
+        {/* DRAFTS */}
+        {tab==="drafts"&&(
+          <div className="mb-6">
+            <h2 className="text-base font-bold text-gray-700 mb-3">📋 Drafts ({drafts.length})</h2>
+            {drafts.length===0?(
+              <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border">
+                <div className="text-4xl mb-2">📝</div><p>No drafts yet.</p>
+              </div>
+            ):(
+              <div className="grid gap-3">
+                {drafts.map(d=>(
+                  <div key={d.id} className="bg-white border border-yellow-200 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3 shadow-sm">
+                    <div>
+                      <p className="font-bold text-gray-800">{d.forwarder||"Unnamed"} <span className="text-gray-400 font-normal text-sm">· {d.line||"—"}</span></p>
+                      <div className="flex gap-3 mt-1 flex-wrap text-xs text-gray-500">
+                        {d.pol&&<span>POL: <b>{d.pol}</b></span>}
+                        {d.pod&&<span>POD: <b>{d.pod}</b></span>}
+                        {d.freight20&&<span>20ft: <b className="text-blue-700">{d.qty20&&`${d.qty20}x `}{parseFloat(d.freight20).toLocaleString()} {d.currency}</b></span>}
+                        {d.freight40hq&&<span>40HQ: <b className="text-purple-700">{d.qty40hq&&`${d.qty40hq}x `}{parseFloat(d.freight40hq).toLocaleString()} {d.currency}</b></span>}
+                        {d.etd&&<span>ETD: {d.etd}</span>}
+                        {d.cutoff&&<span>Cutoff: <span className="text-orange-500">{d.cutoff}</span></span>}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={()=>handleEditDraft(d)} className="text-xs font-semibold px-3 py-1.5 border border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50">✏️ Edit</button>
+                      <button onClick={()=>handlePromoteDraft(d)} className="text-xs font-semibold px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700">✅ Confirm</button>
+                      <button onClick={()=>handleDeleteDraft(d.id)} className="text-xs font-semibold px-3 py-1.5 border border-red-200 text-red-400 rounded-lg hover:bg-red-50">🗑</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* DASHBOARD */}
+        {tab==="dashboard"&&(
+          <>
+            {quotes.length>0&&(
+              <div className="flex flex-wrap gap-2 mb-3 items-center">
+                <span className="text-xs text-gray-400 font-medium">Sort:</span>
+                {[["grand","💰 Grand"],["total20","📦 20ft"],["total40","🏗 40HQ"],["etd","📅 ETD"],["transitTime","⏱ Transit"]].map(([val,label])=>(
+                  <button key={val} onClick={()=>setSortBy(val)}
+                    className={`text-xs px-3 py-1 rounded-full font-semibold border ${sortBy===val?"bg-blue-600 text-white border-blue-600":"bg-white text-gray-600 border-gray-300"}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {sorted.length>0?(
+              <div className="bg-white rounded-2xl shadow-md overflow-x-auto border border-gray-100">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-800 text-white text-xs uppercase tracking-wide">
+                      {["#","Forwarder","Line","POL","POD"].map(h=><th key={h} className="px-3 py-3 text-left whitespace-nowrap">{h}</th>)}
+                      <th className="px-3 py-3 text-right bg-blue-900 whitespace-nowrap">Qty 20</th>
+                      <th className="px-3 py-3 text-right bg-blue-900 whitespace-nowrap">20 Rate</th>
+                      <th className="px-3 py-3 text-right bg-blue-900 whitespace-nowrap">20 THC</th>
+                      <th className="px-3 py-3 text-right bg-blue-800 whitespace-nowrap">Tot 20</th>
+                      <th className="px-3 py-3 text-right bg-purple-900 whitespace-nowrap">Qty 40HQ</th>
+                      <th className="px-3 py-3 text-right bg-purple-900 whitespace-nowrap">40HQ Rate</th>
+                      <th className="px-3 py-3 text-right bg-purple-900 whitespace-nowrap">40HQ THC</th>
+                      <th className="px-3 py-3 text-right bg-purple-800 whitespace-nowrap">Tot 40HQ</th>
+                      <th className="px-3 py-3 text-right whitespace-nowrap">Other</th>
+                      <th className="px-3 py-3 text-right bg-gray-600 whitespace-nowrap">Grand Total</th>
+                      {["CCY","ETD","Cutoff","Free","Transit","Validity","Remarks",""].map(h=><th key={h} className="px-3 py-3 text-left whitespace-nowrap">{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sorted.map((q,i)=>{
+                      const isB=q.id===bestGrandId;
+                      const is20=q.id===best20Id&&q.total20>0;
+                      const is40=q.id===best40Id&&q.total40>0;
+                      const bg=isB?"bg-green-50":i%2===0?"bg-white":"bg-gray-50";
+                      return(
+                        <tr key={q.id} className={`${bg} hover:bg-blue-50 transition-colors border-b border-gray-100`}>
+                          <td className="px-3 py-2 font-bold text-gray-400">{i+1}</td>
+                          <td className="px-3 py-2 font-semibold text-gray-800 whitespace-nowrap">
+                            {q.forwarder}
+                            {isB&&<span className="ml-1 text-xs bg-green-100 text-green-800 border border-green-300 px-1.5 py-0.5 rounded-full font-semibold">BEST</span>}
+                          </td>
+                          <td className="px-3 py-2 text-gray-600">{q.line||"—"}</td>
+                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{q.pol||"—"}</td>
+                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{q.pod||"—"}</td>
+                          <td className="px-3 py-2 text-right bg-blue-50 text-gray-600">{q.qty20||"—"}</td>
+                          <td className="px-3 py-2 text-right bg-blue-50 font-medium">{q.freight20?parseFloat(q.freight20).toLocaleString():"—"}</td>
+                          <td className="px-3 py-2 text-right bg-blue-50">{q.thc20?parseFloat(q.thc20).toLocaleString():"—"}</td>
+                          <td className={`px-3 py-2 text-right bg-blue-100 font-bold ${is20?"text-green-700":"text-blue-800"}`}>{q.total20>0?q.total20.toLocaleString():"—"}</td>
+                          <td className="px-3 py-2 text-right bg-purple-50 text-gray-600">{q.qty40hq||"—"}</td>
+                          <td className="px-3 py-2 text-right bg-purple-50 font-medium">{q.freight40hq?parseFloat(q.freight40hq).toLocaleString():"—"}</td>
+                          <td className="px-3 py-2 text-right bg-purple-50">{q.thc40hq?parseFloat(q.thc40hq).toLocaleString():"—"}</td>
+                          <td className={`px-3 py-2 text-right bg-purple-100 font-bold ${is40?"text-green-700":"text-purple-800"}`}>{q.total40>0?q.total40.toLocaleString():"—"}</td>
+                          <td className="px-3 py-2 text-right">{q.otherCharges?parseFloat(q.otherCharges).toLocaleString():"—"}</td>
+                          <td className={`px-3 py-2 text-right bg-gray-100 font-bold text-lg ${isB?"text-green-700":"text-gray-800"}`}>{q.grand>0?q.grand.toLocaleString():"—"}</td>
+                          <td className="px-3 py-2 text-center text-gray-500">{q.currency}</td>
+                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{q.etd||"—"}</td>
+                          <td className="px-3 py-2 text-orange-600 font-medium whitespace-nowrap">{q.cutoff||"—"}</td>
+                          <td className="px-3 py-2 text-center">{q.freeDays?`${q.freeDays}d`:"—"}</td>
+                          <td className="px-3 py-2 text-center">{q.transitTime?`${q.transitTime}d`:"—"}</td>
+                          <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{q.validityDate||"—"}</td>
+                          <td className="px-3 py-2 text-gray-400 max-w-xs truncate">{q.remarks||"—"}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <button onClick={()=>{handleEditQuote(q);setFormMode("quote");}} className="text-blue-500 hover:text-blue-700 mr-2 text-xs font-semibold">✏️</button>
+                            <button onClick={()=>handleDeleteQuote(q.id)} className="text-red-400 hover:text-red-600 text-xs font-semibold">🗑</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ):(
+              <div className="text-center py-20 text-gray-400 bg-white rounded-2xl border">
+                <div className="text-5xl mb-3">🚢</div>
+                <p className="text-lg font-semibold">No quotes yet</p>
+                <p className="text-sm">Use AI Parser, + New, or promote a draft</p>
+              </div>
+            )}
+
+            {sorted.length>1&&(
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                {[
+                  {label:"Best Grand Total",val:Math.min(...sorted.filter(q=>q.grand>0).map(q=>q.grand)).toLocaleString(),color:"text-green-700",icon:"🏆"},
+                  {label:"Best 20ft Total",val:Math.min(...sorted.filter(q=>q.total20>0).map(q=>q.total20)).toLocaleString(),color:"text-blue-700",icon:"📦"},
+                  {label:"Best 40HQ Total",val:Math.min(...sorted.filter(q=>q.total40>0).map(q=>q.total40)).toLocaleString(),color:"text-purple-700",icon:"🏗️"},
+                  {label:"Avg Grand Total",val:Math.round(sorted.filter(q=>q.grand>0).reduce((s,q)=>s+q.grand,0)/Math.max(sorted.filter(q=>q.grand>0).length,1)).toLocaleString(),color:"text-gray-600",icon:"📊"},
+                ].map(({label,val,color,icon})=>(
+                  <div key={label} className="bg-white rounded-xl shadow border border-gray-100 p-4 text-center">
+                    <div className="text-xl mb-1">{icon}</div>
+                    <div className={`text-xl font-bold ${color}`}>{val}</div>
+                    <div className="text-xs text-gray-400 mt-1">{label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
