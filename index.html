@@ -71,7 +71,15 @@ function App(){
 
   const upd=(k,v)=>setForm(p=>({...p,[k]:v}));
   const inp="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
+  const formRef=React.useRef(null);
   const resetForm=()=>{setForm({...emptyForm});setEditId(null);setEditDraftId(null);setFormMode(null);};
+  const openForm=(mode,targetTab)=>{
+    resetForm();
+    setTab(targetTab);
+    setFormMode(mode);
+    setDropdownOpen(false);
+    setTimeout(()=>formRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),100);
+  };
 
   const enrichQuote=(f)=>({...f,id:editId||Date.now(),total20:calcTotal(f,"20"),total40:calcTotal(f,"40"),grand:calcGrand(f)});
 
@@ -235,20 +243,10 @@ function App(){
             <p className="text-sm text-gray-500">{quotes.length} quote{quotes.length!==1?"s":""} · {drafts.length} draft{drafts.length!==1?"s":""}</p>
           </div>
           <div className="flex gap-2 flex-wrap items-center">
-            <div className="relative">
-              <button onClick={()=>setDropdownOpen(p=>!p)}
-                className="text-sm font-semibold px-4 py-2 rounded-lg bg-blue-600 text-white flex items-center gap-1 hover:bg-blue-700">
-                ＋ New <span className="text-blue-200 text-xs">▾</span>
-              </button>
-              {dropdownOpen&&(
-                <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
-                  <button onClick={()=>{setTab("dashboard");setFormMode("quote");resetForm();setDropdownOpen(false);}}
-                    className="w-full text-left px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-blue-50 border-b border-gray-100">✅ New Quote</button>
-                  <button onClick={()=>{setTab("drafts");setFormMode("draft");resetForm();setDropdownOpen(false);}}
-                    className="w-full text-left px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-yellow-50">📝 New Draft</button>
-                </div>
-              )}
-            </div>
+            <button onClick={()=>openForm("draft","drafts")}
+              className="text-sm font-semibold px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+              ＋ New Draft
+            </button>
             <button onClick={()=>{setPasteOpen(p=>!p);setTab("dashboard");}}
               className={`text-sm font-semibold px-4 py-2 rounded-lg border ${pasteOpen?"bg-purple-700 text-white border-purple-700":"bg-white text-purple-700 border-purple-400"}`}>
               🤖 {pasteOpen?"Hide":"AI Parser"}
@@ -329,7 +327,7 @@ function App(){
         )}
 
         {/* Form */}
-        {formMode&&<FormPanel mode={formMode}/>}
+        {formMode&&<div ref={formRef}><FormPanel mode={formMode}/></div>}
 
         {/* DRAFTS */}
         {tab==="drafts"&&(
