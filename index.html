@@ -8,40 +8,68 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  body{margin:0;font-family:system-ui,sans-serif;}
+  .dark body{background:#0f172a;}
+  ::-webkit-scrollbar{width:6px;height:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:#475569;border-radius:3px;}
+</style>
 </head>
-<body class="bg-gray-50">
+<body>
 <div id="root"></div>
 <script type="text/babel">
 
-const SK="freight-v6";
-const emptyForm={forwarder:"",forwarderCode:"",line:"",lineCode:"",pol:"",pod:"",freight20:"",freight40hq:"",thc20:"",thc40hq:"",qty20:"",qty40hq:"",otherCharges:"",currency:"USD",etd:"",cutoff:"",validityDate:"",freeDays:"",transitTime:"",remarks:""};
+const SK="freight-v7";
+const PASSWORD="giovannihan";
+const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+const emptyForm={forwarder:"",forwarderCode:"",line:"",lineCode:"",pol:"",pod:"",
+  freight20:"",freight40hq:"",thc20:"",thc40hq:"",
+  qty20:"",qty40hq:"",otherCharges:"",currency:"USD",
+  etd:"",cutoff:"",validityDate:"",freeDays:"",transitTime:"",remarks:"",
+  projectId:""};
 const emptyFwd={id:"",code:"",name:"",contact:"",email:"",phone:"",notes:""};
-const emptyLine={id:"",code:"",name:"",routes:"",freeDays:"",thcStandard:"",notes:""};
+const emptyLine={id:"",code:"",name:"",routes:"",freeDays:"",thc20Standard:"",thc40Standard:"",notes:""};
+const emptyProject={id:"",name:"",month:"",year:"",factory:"",pol:"",pod:"",notes:"",
+  requests:[]};
+const emptyRequest={id:"",description:"",qty20:0,qty40:0};
 const currencies=["USD","EGP","EUR","CNY"];
 
 function calcTotal(r,type="20"){
   const f=parseFloat(type==="20"?r.freight20:r.freight40hq)||0;
   const t=parseFloat(type==="20"?r.thc20:r.thc40hq)||0;
-  const o=parseFloat(r.otherCharges)||0;
-  const q=parseInt(type==="20"?r.qty20:r.qty40hq)||1;
-  return (f+t)*q+o;
+  const q=parseInt(type==="20"?r.qty20:r.qty40hq)||0;
+  return (f+t)*q;
 }
 function calcGrand(r){
-  const f20=parseFloat(r.freight20)||0,t20=parseFloat(r.thc20)||0;
-  const f40=parseFloat(r.freight40hq)||0,t40=parseFloat(r.thc40hq)||0;
-  const q20=parseInt(r.qty20)||0,q40=parseInt(r.qty40hq)||0;
-  return (f20+t20)*q20+(f40+t40)*q40+(parseFloat(r.otherCharges)||0);
+  return calcTotal(r,"20")+calcTotal(r,"40")+(parseFloat(r.otherCharges)||0);
 }
-function Field({label,color="text-gray-500",children}){
-  return <div><label className={`text-xs font-medium ${color}`}>{label}</label>{children}</div>;
-}
-function Modal({title,onClose,children}){
+
+// ── Contexts ──────────────────────────────────────────
+const DarkCtx=React.createContext();
+function useDark(){return React.useContext(DarkCtx);}
+
+// ── Small Components ──────────────────────────────────
+function Field({label,color,children}){
+  const{dark}=useDark();
   return(
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-screen overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b">
-          <h2 className="text-base font-bold text-gray-800">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-red-500 text-xl font-bold">✕</button>
+    <div>
+      <label className={`text-xs font-medium ${color||(dark?"text-slate-400":"text-gray-500")}`}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function Modal({title,onClose,wide,children}){
+  const{dark}=useDark();
+  return(
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-3">
+      <div className={`rounded-2xl shadow-2xl w-full ${wide?"max-w-4xl":"max-w-2xl"} max-h-[90vh] overflow-y-auto ${dark?"bg-slate-800 text-slate-100":"bg-white text-gray-800"}`}>
+        <div className={`flex items-center justify-between p-5 border-b ${dark?"border-slate-700":"border-gray-100"}`}>
+          <h2 className="text-base font-bold">{title}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-red-400 text-xl font-bold">✕</button>
         </div>
         <div className="p-5">{children}</div>
       </div>
@@ -49,14 +77,142 @@ function Modal({title,onClose,children}){
   );
 }
 
+function Btn({onClick,color="blue",size="sm",disabled,children,className=""}){
+  const base=`font-semibold rounded-lg transition-colors disabled:opacity-40 ${size==="sm"?"text-sm px-4 py-2":"text-xs px-3 py-1.5"}`;
+  const colors={
+    blue:"bg-blue-600 hover:bg-blue-700 text-white",
+    green:"bg-green-600 hover:bg-green-700 text-white",
+    yellow:"bg-yellow-400 hover:bg-yellow-500 text-white",
+    red:"bg-red-500 hover:bg-red-600 text-white",
+    orange:"bg-orange-500 hover:bg-orange-600 text-white",
+    teal:"bg-teal-500 hover:bg-teal-600 text-white",
+    purple:"bg-purple-600 hover:bg-purple-700 text-white",
+    gray:"bg-gray-200 hover:bg-gray-300 text-gray-700",
+    ghost:"border border-gray-300 hover:bg-gray-50 text-gray-600",
+  };
+  return <button onClick={onClick} disabled={disabled} className={`${base} ${colors[color]} ${className}`}>{children}</button>;
+}
+
+// ── Chart Component ────────────────────────────────────
+function TrendChart({quotes,forwarders}){
+  const{dark}=useDark();
+  const canvasRef=React.useRef();
+  const chartRef=React.useRef();
+
+  React.useEffect(()=>{
+    if(!canvasRef.current||!quotes.length)return;
+    if(chartRef.current)chartRef.current.destroy();
+
+    const fwdNames=[...new Set(quotes.map(q=>q.forwarder))].slice(0,6);
+    const monthKeys=[...new Set(quotes.map(q=>(q.date||"").slice(0,7)))].sort();
+
+    const colors=["#3b82f6","#a855f7","#10b981","#f59e0b","#ef4444","#06b6d4"];
+    const datasets=fwdNames.map((name,i)=>({
+      label:name,
+      data:monthKeys.map(m=>{
+        const qs=quotes.filter(q=>q.forwarder===name&&(q.date||"").startsWith(m)&&q.freight20);
+        if(!qs.length)return null;
+        return Math.round(qs.reduce((s,q)=>s+parseFloat(q.freight20),0)/qs.length);
+      }),
+      borderColor:colors[i],backgroundColor:colors[i]+"33",
+      tension:0.3,pointRadius:4,spanGaps:true,
+    }));
+
+    chartRef.current=new Chart(canvasRef.current,{
+      type:"line",
+      data:{labels:monthKeys.map(m=>{const[y,mo]=m.split("-");return `${MONTHS[parseInt(mo)-1]} ${y}`;}),datasets},
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:dark?"#cbd5e1":"#374151",font:{size:11}}},
+          tooltip:{mode:"index",intersect:false}},
+        scales:{
+          x:{grid:{color:dark?"#1e293b":"#f1f5f9"},ticks:{color:dark?"#94a3b8":"#6b7280"}},
+          y:{grid:{color:dark?"#1e293b":"#f1f5f9"},ticks:{color:dark?"#94a3b8":"#6b7280"},title:{display:true,text:"20ft Rate (USD)",color:dark?"#94a3b8":"#6b7280"}}
+        }
+      }
+    });
+    return()=>chartRef.current?.destroy();
+  },[quotes,dark]);
+
+  if(!quotes.length)return null;
+  return(
+    <div className={`rounded-2xl p-4 mb-5 shadow-md ${dark?"bg-slate-800":"bg-white"} border ${dark?"border-slate-700":"border-gray-100"}`}>
+      <h3 className={`text-sm font-bold mb-3 ${dark?"text-slate-200":"text-gray-700"}`}>📈 Price Trend — 20ft Rate by Forwarder</h3>
+      <div style={{height:240}}><canvas ref={canvasRef}/></div>
+    </div>
+  );
+}
+
+// ── Month Compare ──────────────────────────────────────
+function MonthCompare({quotes}){
+  const{dark}=useDark();
+  const months=[...new Set(quotes.map(q=>(q.date||"").slice(0,7)))].sort().reverse().slice(0,6);
+  const [mA,setMA]=React.useState(months[1]||"");
+  const [mB,setMB]=React.useState(months[0]||"");
+  const sel=`w-full border rounded-lg px-2 py-1.5 text-sm ${dark?"bg-slate-700 border-slate-600 text-slate-100":"bg-white border-gray-300 text-gray-800"}`;
+
+  const stats=(m)=>{
+    const qs=quotes.filter(q=>(q.date||"").startsWith(m)&&q.freight20);
+    if(!qs.length)return null;
+    const avg=Math.round(qs.reduce((s,q)=>s+parseFloat(q.freight20),0)/qs.length);
+    const min=Math.min(...qs.map(q=>parseFloat(q.freight20)));
+    const max=Math.max(...qs.map(q=>parseFloat(q.freight20)));
+    return{avg,min,max,count:qs.length};
+  };
+  const sA=stats(mA),sB=stats(mB);
+  const diff=sA&&sB?sB.avg-sA.avg:null;
+
+  return(
+    <div className={`rounded-2xl p-4 mb-5 shadow-md ${dark?"bg-slate-800":"bg-white"} border ${dark?"border-slate-700":"border-gray-100"}`}>
+      <h3 className={`text-sm font-bold mb-3 ${dark?"text-slate-200":"text-gray-700"}`}>📊 Month vs Month Comparison</h3>
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div><label className={`text-xs ${dark?"text-slate-400":"text-gray-500"}`}>Month A</label><select className={sel} value={mA} onChange={e=>setMA(e.target.value)}><option value="">—</option>{months.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+        <div><label className={`text-xs ${dark?"text-slate-400":"text-gray-500"}`}>Month B</label><select className={sel} value={mB} onChange={e=>setMB(e.target.value)}><option value="">—</option>{months.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+      </div>
+      {sA&&sB?(
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            {label:"Avg 20ft Rate",a:sA.avg,b:sB.avg,fmt:v=>`$${v.toLocaleString()}`},
+            {label:"Lowest 20ft",a:sA.min,b:sB.min,fmt:v=>`$${v.toLocaleString()}`},
+            {label:"Quotes Count",a:sA.count,b:sB.count,fmt:v=>v},
+          ].map(({label,a,b,fmt})=>{
+            const chg=b-a;const pct=a?Math.round(chg/a*100):0;
+            return(
+              <div key={label} className={`rounded-xl p-3 ${dark?"bg-slate-700":"bg-gray-50"}`}>
+                <div className={`text-xs mb-1 ${dark?"text-slate-400":"text-gray-400"}`}>{label}</div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className={dark?"text-slate-300":"text-gray-600"}>{mA}: <b>{fmt(a)}</b></span>
+                  <span className={dark?"text-slate-300":"text-gray-600"}>{mB}: <b>{fmt(b)}</b></span>
+                </div>
+                <div className={`text-sm font-bold ${chg>0?"text-red-500":chg<0?"text-green-500":"text-gray-400"}`}>
+                  {chg>0?"▲":"▼"} {Math.abs(pct)}% ({chg>0?"+":""}{fmt(chg)})
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ):<p className={`text-sm ${dark?"text-slate-400":"text-gray-400"}`}>Select two months to compare.</p>}
+    </div>
+  );
+}
+
+// ── Main App ───────────────────────────────────────────
 function App(){
-  const [data,setData]=React.useState({quotes:[],drafts:[],forwarders:[],lines:[]});
+  const [dark,setDark]=React.useState(()=>localStorage.getItem("dark")==="1");
+  const [authed,setAuthed]=React.useState(false);
+  const [pwInput,setPwInput]=React.useState("");
+  const [pwErr,setPwErr]=React.useState(false);
+
+  const [data,setData]=React.useState({quotes:[],drafts:[],forwarders:[],lines:[],projects:[]});
   const [tab,setTab]=React.useState("dashboard");
   const [form,setForm]=React.useState({...emptyForm});
   const [formMode,setFormMode]=React.useState(null);
   const [editId,setEditId]=React.useState(null);
   const [editDraftId,setEditDraftId]=React.useState(null);
   const [sortBy,setSortBy]=React.useState("grand");
+  const [search,setSearch]=React.useState("");
+  const [filterFwd,setFilterFwd]=React.useState("");
+  const [filterLine,setFilterLine]=React.useState("");
   const [pasteOpen,setPasteOpen]=React.useState(false);
   const [pasteText,setPasteText]=React.useState("");
   const [parsing,setParsing]=React.useState(false);
@@ -64,32 +220,37 @@ function App(){
   const [parsed,setParsed]=React.useState(null);
   const [apiKey,setApiKey]=React.useState(()=>localStorage.getItem("gemini_key")||"");
   const [showKeyModal,setShowKeyModal]=React.useState(false);
-  const [fwdModal,setFwdModal]=React.useState(null); // null | 'new' | fwd object
+  const [fwdModal,setFwdModal]=React.useState(null);
   const [lineModal,setLineModal]=React.useState(null);
+  const [projectModal,setProjectModal]=React.useState(null);
   const [fwdForm,setFwdForm]=React.useState({...emptyFwd});
   const [lineForm,setLineForm]=React.useState({...emptyLine});
-  const [historyModal,setHistoryModal]=React.useState(null); // {type:'fwd'|'line', id}
-  const formRef=React.useRef(null);
+  const [projectForm,setProjectForm]=React.useState({...emptyProject});
+  const [historyModal,setHistoryModal]=React.useState(null);
+  const [activeProject,setActiveProject]=React.useState(null);
+  const [reqForm,setReqForm]=React.useState({...emptyRequest});
+  const formRef=React.useRef();
 
   React.useEffect(()=>{
-    try{const s=localStorage.getItem(SK);if(s){const d=JSON.parse(s);setData({quotes:d.quotes||[],drafts:d.drafts||[],forwarders:d.forwarders||[],lines:d.lines||[]});}}catch{}
+    try{const s=localStorage.getItem(SK);if(s){const d=JSON.parse(s);setData({quotes:d.quotes||[],drafts:d.drafts||[],forwarders:d.forwarders||[],lines:d.lines||[],projects:d.projects||[]});}}catch{}
   },[]);
 
-  const persist=(patch)=>{
-    const nd={...data,...patch};
-    setData(nd);
-    try{localStorage.setItem(SK,JSON.stringify(nd));}catch{}
-  };
+  const toggleDark=()=>{const nd=!dark;setDark(nd);localStorage.setItem("dark",nd?"1":"0");};
+  const persist=(patch)=>{const nd={...data,...patch};setData(nd);try{localStorage.setItem(SK,JSON.stringify(nd));}catch{}};
 
-  const inp="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
+  const bg=dark?"bg-slate-900 text-slate-100":"bg-gray-50 text-gray-900";
+  const card=dark?"bg-slate-800 border-slate-700":"bg-white border-gray-100";
+  const inp=`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${dark?"bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400":"bg-white border-gray-300 text-gray-800"}`;
+  const thC=dark?"bg-slate-700 text-slate-200":"bg-gray-800 text-white";
+
   const upd=(k,v)=>setForm(p=>({...p,[k]:v}));
   const resetForm=()=>{setForm({...emptyForm});setEditId(null);setEditDraftId(null);setFormMode(null);};
-  const openForm=(mode,targetTab)=>{resetForm();setTab(targetTab);setFormMode(mode);setTimeout(()=>formRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),100);};
+  const openForm=(mode,targetTab,defaults={})=>{resetForm();setForm(p=>({...p,...defaults}));setTab(targetTab);setFormMode(mode);setTimeout(()=>formRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),120);};
 
   const enrichQ=(f,id)=>({...f,id:id||Date.now(),date:f.date||new Date().toISOString().slice(0,10),total20:calcTotal(f,"20"),total40:calcTotal(f,"40"),grand:calcGrand(f)});
 
   const handleSaveQuote=()=>{
-    if(!form.forwarder.trim()){alert("Forwarder is required.");return;}
+    if(!form.forwarder.trim()){alert("Forwarder required.");return;}
     const rec=enrichQ(form,editId);
     persist({quotes:editId?data.quotes.map(q=>q.id===editId?rec:q):[...data.quotes,rec]});
     resetForm();setTab("dashboard");
@@ -100,43 +261,54 @@ function App(){
     persist({drafts:editDraftId?data.drafts.map(d=>d.id===editDraftId?rec:d):[...data.drafts,rec]});
     resetForm();setTab("drafts");
   };
-  const promoteDraft=(d)=>{
-    persist({quotes:[...data.quotes,enrichQ(d,Date.now())],drafts:data.drafts.filter(x=>x.id!==d.id)});
-    setTab("dashboard");
-  };
-  const editQuote=(q)=>{setForm({...emptyForm,...q});setEditId(q.id);setFormMode("draft");setTab("dashboard");setTimeout(()=>formRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),100);};
-  const editDraft=(d)=>{setForm({...emptyForm,...d});setEditDraftId(d.id);setFormMode("draft");setTab("drafts");setTimeout(()=>formRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),100);};
+  const promoteDraft=(d)=>{persist({quotes:[...data.quotes,enrichQ(d,Date.now())],drafts:data.drafts.filter(x=>x.id!==d.id)});setTab("dashboard");};
+  const editQuote=(q)=>{setForm({...emptyForm,...q});setEditId(q.id);setFormMode("quote");setTab("dashboard");setTimeout(()=>formRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),120);};
+  const editDraftFn=(d)=>{setForm({...emptyForm,...d});setEditDraftId(d.id);setFormMode("draft");setTab("drafts");setTimeout(()=>formRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),120);};
+  const dupQuote=(q)=>{const rec=enrichQ({...q,date:new Date().toISOString().slice(0,10)},Date.now());persist({quotes:[...data.quotes,rec]});};
 
-  // Forwarder CRUD
-  const saveFwd=()=>{
-    if(!fwdForm.name.trim()){alert("Name required.");return;}
-    const rec={...fwdForm,id:fwdForm.id||Date.now()};
-    persist({forwarders:fwdForm.id?data.forwarders.map(f=>f.id===fwdForm.id?rec:f):[...data.forwarders,rec]});
-    setFwdModal(null);setFwdForm({...emptyFwd});
-  };
+  // Forwarder
+  const saveFwd=()=>{if(!fwdForm.name.trim()){alert("Name required.");return;}const rec={...fwdForm,id:fwdForm.id||Date.now()};persist({forwarders:fwdForm.id?data.forwarders.map(f=>f.id===fwdForm.id?rec:f):[...data.forwarders,rec]});setFwdModal(null);setFwdForm({...emptyFwd});};
   const deleteFwd=(id)=>{if(window.confirm("Delete forwarder?"))persist({forwarders:data.forwarders.filter(f=>f.id!==id)});};
-  const openEditFwd=(f)=>{setFwdForm({...f});setFwdModal("edit");};
 
-  // Line CRUD
-  const saveLine=()=>{
-    if(!lineForm.name.trim()){alert("Name required.");return;}
-    const rec={...lineForm,id:lineForm.id||Date.now()};
-    persist({lines:lineForm.id?data.lines.map(l=>l.id===lineForm.id?rec:l):[...data.lines,rec]});
-    setLineModal(null);setLineForm({...emptyLine});
-  };
+  // Line
+  const saveLine=()=>{if(!lineForm.name.trim()){alert("Name required.");return;}const rec={...lineForm,id:lineForm.id||Date.now()};persist({lines:lineForm.id?data.lines.map(l=>l.id===lineForm.id?rec:l):[...data.lines,rec]});setLineModal(null);setLineForm({...emptyLine});};
   const deleteLine=(id)=>{if(window.confirm("Delete line?"))persist({lines:data.lines.filter(l=>l.id!==id)});};
-  const openEditLine=(l)=>{setLineForm({...l});setLineModal("edit");};
 
-  // Quotes sorted
-  const sorted=[...data.quotes].map(q=>({...q,total20:calcTotal(q,"20"),total40:calcTotal(q,"40"),grand:calcGrand(q)}))
+  // Project
+  const saveProject=()=>{
+    if(!projectForm.name.trim()){alert("Project name required.");return;}
+    const rec={...projectForm,id:projectForm.id||Date.now(),requests:projectForm.requests||[]};
+    persist({projects:projectForm.id?data.projects.map(p=>p.id===projectForm.id?rec:p):[...data.projects,rec]});
+    setProjectModal(null);setProjectForm({...emptyProject});
+  };
+  const deleteProject=(id)=>{if(window.confirm("Delete project?"))persist({projects:data.projects.filter(p=>p.id!==id)});};
+  const addRequest=()=>{
+    if(!reqForm.description.trim())return;
+    const req={...reqForm,id:Date.now()};
+    setProjectForm(p=>({...p,requests:[...(p.requests||[]),req]}));
+    setReqForm({...emptyRequest});
+  };
+  const removeRequest=(rid)=>setProjectForm(p=>({...p,requests:p.requests.filter(r=>r.id!==rid)}));
+
+  // Quotes filtered/sorted
+  const allQuotes=[...data.quotes].map(q=>({...q,total20:calcTotal(q,"20"),total40:calcTotal(q,"40"),grand:calcGrand(q)}));
+  const sorted=allQuotes
+    .filter(q=>{
+      const s=search.toLowerCase();
+      const matchSearch=!s||(q.forwarder+q.line+q.pol+q.pod+q.remarks).toLowerCase().includes(s);
+      const matchFwd=!filterFwd||q.forwarder===filterFwd;
+      const matchLine=!filterLine||q.line===filterLine;
+      return matchSearch&&matchFwd&&matchLine;
+    })
     .sort((a,b)=>sortBy==="grand"?a.grand-b.grand:sortBy==="total20"?a.total20-b.total20:sortBy==="total40"?a.total40-b.total40:sortBy==="etd"?(a.etd||"").localeCompare(b.etd||""):(a.transitTime||0)-(b.transitTime||0));
+
   const bestGrandId=sorted.filter(q=>q.grand>0).sort((a,b)=>a.grand-b.grand)[0]?.id;
   const best20Id=sorted.filter(q=>q.total20>0).sort((a,b)=>a.total20-b.total20)[0]?.id;
   const best40Id=sorted.filter(q=>q.total40>0).sort((a,b)=>a.total40-b.total40)[0]?.id;
 
-  // History helpers
-  const getFwdHistory=(fwdName)=>data.quotes.filter(q=>q.forwarder===fwdName).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
-  const getLineHistory=(lineName)=>data.quotes.filter(q=>q.line===lineName).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const getFwdHistory=(name)=>allQuotes.filter(q=>q.forwarder===name).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const getLineHistory=(name)=>allQuotes.filter(q=>q.line===name).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const getProjectQuotes=(pid)=>allQuotes.filter(q=>q.projectId===String(pid));
 
   // AI Parse
   const handleParse=async()=>{
@@ -146,18 +318,16 @@ function App(){
     try{
       const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,{
         method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({contents:[{parts:[{text:`Extract freight quote data from the text and return ONLY a JSON array. Keys: forwarder, forwarderCode, line, lineCode, pol, pod, freight20, freight40hq, thc20, thc40hq, qty20, qty40hq, otherCharges, currency (default USD), etd (YYYY-MM-DD), cutoff (YYYY-MM-DD), validityDate (YYYY-MM-DD), freeDays, transitTime, remarks. Empty string if not found. Raw JSON only, no markdown.\n\n${pasteText}`}]}]})
+        body:JSON.stringify({contents:[{parts:[{text:`Extract freight quote data. Return ONLY a JSON array. Keys: forwarder, forwarderCode, line, lineCode, pol, pod, freight20, freight40hq, thc20, thc40hq, qty20, qty40hq, otherCharges, currency (default USD), etd (YYYY-MM-DD), cutoff (YYYY-MM-DD), validityDate (YYYY-MM-DD), freeDays, transitTime, remarks. Empty string if not found. Raw JSON only.\n\n${pasteText}`}]}]})
       });
       const d=await res.json();
       const text=d.candidates?.[0]?.content?.parts?.[0]?.text||"";
       if(!text)throw new Error();
       const clean=text.replace(/```json/gi,"").replace(/```/g,"").trim();
       const s=clean.indexOf("["),e=clean.lastIndexOf("]");
-      if(s===-1||e===-1)throw new Error();
       const arr=JSON.parse(clean.slice(s,e+1));
-      if(!Array.isArray(arr))throw new Error();
       setParsed(arr.map(q=>({...emptyForm,...q,id:Date.now()+Math.random(),date:new Date().toISOString().slice(0,10),total20:calcTotal(q,"20"),total40:calcTotal(q,"40"),grand:calcGrand(q)})));
-    }catch{setParseError("Could not parse. Check your input or API key.");}
+    }catch{setParseError("Could not parse. Check input or API key.");}
     setParsing(false);
   };
   const confirmParsed=(asDraft=false)=>{
@@ -169,79 +339,110 @@ function App(){
 
   // Export
   const exportCSV=()=>{
-    const cols=["#","Date","Forwarder","Fwd Code","Line","Line Code","POL","POD","Qty20","20Rate","20THC","Tot20","Qty40","40Rate","40THC","Tot40","Other","Grand","CCY","ETD","Cutoff","FreeDays","Transit","Validity","Remarks"];
-    const rows=sorted.map((q,i)=>[i+1,q.date||"",q.forwarder,q.forwarderCode||"",q.line||"",q.lineCode||"",q.pol||"",q.pod||"",q.qty20||"",q.freight20||"",q.thc20||"",q.total20||"",q.qty40hq||"",q.freight40hq||"",q.thc40hq||"",q.total40||"",q.otherCharges||"",q.grand||"",q.currency,q.etd||"",q.cutoff||"",q.freeDays||"",q.transitTime||"",q.validityDate||"",q.remarks||""]);
+    const cols=["#","Date","Forwarder","FwdCode","Line","LineCode","POL","POD","Qty20","20Rate","20THC","Tot20","Qty40","40Rate","40THC","Tot40","Other","Grand","CCY","ETD","Cutoff","FreeDays","Transit","Validity","Remarks","Project"];
+    const rows=sorted.map((q,i)=>{const pr=data.projects.find(p=>String(p.id)===String(q.projectId));return[i+1,q.date||"",q.forwarder,q.forwarderCode||"",q.line||"",q.lineCode||"",q.pol||"",q.pod||"",q.qty20||"",q.freight20||"",q.thc20||"",q.total20||"",q.qty40hq||"",q.freight40hq||"",q.thc40hq||"",q.total40||"",q.otherCharges||"",q.grand||"",q.currency,q.etd||"",q.cutoff||"",q.freeDays||"",q.transitTime||"",q.validityDate||"",q.remarks||"",pr?pr.name:""];});
     const csv=[cols,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
     const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="freight_rates.csv";a.click();
   };
+  const exportJSON=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));a.download="freight_backup.json";a.click();};
+  const importJSON=(e)=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{const d=JSON.parse(ev.target.result);persist(d);alert("Data imported!");}catch{alert("Invalid file.");}};r.readAsText(f);};
 
+  // ── Login Screen ───────────────────────────────────
+  if(!authed){
+    return(
+      <div className={`min-h-screen flex items-center justify-center ${dark?"bg-slate-900":"bg-gray-100"}`}>
+        <div className={`rounded-2xl shadow-xl p-8 w-80 ${dark?"bg-slate-800":"bg-white"}`}>
+          <div className="text-center mb-6">
+            <div className="text-5xl mb-2">🚢</div>
+            <h1 className={`text-xl font-bold ${dark?"text-slate-100":"text-gray-800"}`}>Freight Dashboard</h1>
+            <p className={`text-sm ${dark?"text-slate-400":"text-gray-400"}`}>Enter password to continue</p>
+          </div>
+          <input type="password" className={`${inp} mb-3`} placeholder="Password" value={pwInput}
+            onChange={e=>setPwInput(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter"){if(pwInput===PASSWORD)setAuthed(true);else setPwErr(true);}}}/>
+          {pwErr&&<p className="text-red-500 text-xs mb-2">Incorrect password.</p>}
+          <Btn color="blue" className="w-full" onClick={()=>{if(pwInput===PASSWORD)setAuthed(true);else setPwErr(true);}}>Enter →</Btn>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Form Panel ─────────────────────────────────────
   const FormPanel=({mode})=>(
-    <div className={`bg-white rounded-2xl shadow-md p-5 mb-5 border ${mode==="draft"?"border-yellow-200":"border-blue-100"}`}>
+    <div className={`rounded-2xl shadow-md p-5 mb-5 border ${card} ${mode==="draft"?"border-yellow-400":""}`}>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-bold text-gray-700">{editDraftId?"✏️ Edit Draft":editId?"✏️ Edit Quote":"📝 New Draft"}</h2>
-        <button onClick={resetForm} className="text-gray-400 hover:text-red-500 text-xl">✕</button>
+        <h2 className="text-base font-bold">{editDraftId?"✏️ Edit Draft":editId?"✏️ Edit Quote":"📝 New Draft"}</h2>
+        <button onClick={resetForm} className="text-gray-400 hover:text-red-400 text-xl">✕</button>
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {/* Forwarder */}
         <div className="col-span-2">
-          <Field label="Forwarder Name *">
-            <input list="fwd-list" className={inp} value={form.forwarder} onChange={e=>{upd("forwarder",e.target.value);const f=data.forwarders.find(x=>x.name===e.target.value);if(f)setForm(p=>({...p,forwarder:f.name,forwarderCode:f.code}));}} placeholder="e.g. Transmar"/>
+          <Field label="Forwarder *">
+            <input list="fwd-list" className={inp} value={form.forwarder}
+              onChange={e=>{const v=e.target.value;const f=data.forwarders.find(x=>x.name===v);upd("forwarder",v);if(f){setForm(p=>({...p,forwarder:f.name,forwarderCode:f.code}));}}}
+              placeholder="Select or type forwarder"/>
             <datalist id="fwd-list">{data.forwarders.map(f=><option key={f.id} value={f.name}/>)}</datalist>
           </Field>
         </div>
-        <div className="col-span-1"><Field label="Forwarder Code"><input className={inp} value={form.forwarderCode} onChange={e=>upd("forwarderCode",e.target.value)} placeholder="e.g. TRM"/></Field></div>
-        <div className="col-span-1"><Field label="Date"><input type="date" className={inp} value={form.date||new Date().toISOString().slice(0,10)} onChange={e=>upd("date",e.target.value)}/></Field></div>
-        {/* Line */}
+        <Field label="Forwarder Code"><input className={inp} value={form.forwarderCode} onChange={e=>upd("forwarderCode",e.target.value)} placeholder="TRM"/></Field>
+        <Field label="Date"><input type="date" className={inp} value={form.date||new Date().toISOString().slice(0,10)} onChange={e=>upd("date",e.target.value)}/></Field>
         <div className="col-span-2">
           <Field label="Shipping Line">
-            <input list="line-list" className={inp} value={form.line} onChange={e=>{upd("line",e.target.value);const l=data.lines.find(x=>x.name===e.target.value);if(l)setForm(p=>({...p,line:l.name,lineCode:l.code,freeDays:l.freeDays||p.freeDays}));}} placeholder="e.g. MSC"/>
+            <input list="line-list" className={inp} value={form.line}
+              onChange={e=>{const v=e.target.value;const l=data.lines.find(x=>x.name===v);upd("line",v);if(l){setForm(p=>({...p,line:l.name,lineCode:l.code,freeDays:l.freeDays||p.freeDays}));}}}
+              placeholder="Select or type line"/>
             <datalist id="line-list">{data.lines.map(l=><option key={l.id} value={l.name}/>)}</datalist>
           </Field>
         </div>
-        <div className="col-span-1"><Field label="Line Code"><input className={inp} value={form.lineCode} onChange={e=>upd("lineCode",e.target.value)} placeholder="e.g. MSC"/></Field></div>
-        <div className="col-span-1"><Field label="Free Days"><input type="number" className={inp} value={form.freeDays} onChange={e=>upd("freeDays",e.target.value)} placeholder="14"/></Field></div>
-        {/* POL/POD */}
-        <div className="col-span-1"><Field label="POL"><input className={inp} value={form.pol} onChange={e=>upd("pol",e.target.value)} placeholder="Shanghai"/></Field></div>
-        <div className="col-span-1"><Field label="POD"><input className={inp} value={form.pod} onChange={e=>upd("pod",e.target.value)} placeholder="Alexandria"/></Field></div>
+        <Field label="Line Code"><input className={inp} value={form.lineCode} onChange={e=>upd("lineCode",e.target.value)} placeholder="MSC"/></Field>
+        <div className="col-span-1">
+          <Field label="Project (optional)">
+            <select className={inp} value={form.projectId} onChange={e=>upd("projectId",e.target.value)}>
+              <option value="">— No project —</option>
+              {data.projects.map(p=><option key={p.id} value={String(p.id)}>{p.name} ({p.month} {p.year})</option>)}
+            </select>
+          </Field>
+        </div>
+        <Field label="POL"><input className={inp} value={form.pol} onChange={e=>upd("pol",e.target.value)} placeholder="Shanghai"/></Field>
+        <Field label="POD"><input className={inp} value={form.pod} onChange={e=>upd("pod",e.target.value)} placeholder="Alexandria"/></Field>
         {/* 20ft */}
-        <Field label="Qty 20ft" color="text-blue-600 font-bold"><input type="number" className={inp} value={form.qty20} onChange={e=>upd("qty20",e.target.value)} placeholder="0"/></Field>
-        <Field label="20ft Rate" color="text-blue-600 font-bold"><input type="number" className={inp} value={form.freight20} onChange={e=>upd("freight20",e.target.value)} placeholder="0"/></Field>
-        <Field label="20ft THC" color="text-blue-600 font-bold"><input type="number" className={inp} value={form.thc20} onChange={e=>upd("thc20",e.target.value)} placeholder="0"/></Field>
-        <div className="bg-blue-50 rounded-lg px-3 py-2 flex flex-col justify-center">
-          <span className="text-xs text-blue-500">Total 20ft</span>
-          <span className="font-bold text-blue-700">{calcTotal(form,"20").toLocaleString()} {form.currency}</span>
+        <Field label="Qty 20ft" color="text-blue-500 font-bold"><input type="number" className={inp} value={form.qty20} onChange={e=>upd("qty20",e.target.value)} placeholder="0"/></Field>
+        <Field label="20ft Freight" color="text-blue-500 font-bold"><input type="number" className={inp} value={form.freight20} onChange={e=>upd("freight20",e.target.value)} placeholder="0"/></Field>
+        <Field label="20ft THC" color="text-blue-500 font-bold"><input type="number" className={inp} value={form.thc20} onChange={e=>upd("thc20",e.target.value)} placeholder="0"/></Field>
+        <div className={`rounded-lg px-3 py-2 flex flex-col justify-center ${dark?"bg-blue-900":"bg-blue-50"}`}>
+          <span className="text-xs text-blue-400">Total 20ft</span>
+          <span className="font-bold text-blue-500">{calcTotal(form,"20").toLocaleString()} {form.currency}</span>
         </div>
         {/* 40HQ */}
-        <Field label="Qty 40HQ" color="text-purple-600 font-bold"><input type="number" className={inp} value={form.qty40hq} onChange={e=>upd("qty40hq",e.target.value)} placeholder="0"/></Field>
-        <Field label="40HQ Rate" color="text-purple-600 font-bold"><input type="number" className={inp} value={form.freight40hq} onChange={e=>upd("freight40hq",e.target.value)} placeholder="0"/></Field>
-        <Field label="40HQ THC" color="text-purple-600 font-bold"><input type="number" className={inp} value={form.thc40hq} onChange={e=>upd("thc40hq",e.target.value)} placeholder="0"/></Field>
-        <div className="bg-purple-50 rounded-lg px-3 py-2 flex flex-col justify-center">
-          <span className="text-xs text-purple-500">Total 40HQ</span>
-          <span className="font-bold text-purple-700">{calcTotal(form,"40").toLocaleString()} {form.currency}</span>
+        <Field label="Qty 40HQ" color="text-purple-500 font-bold"><input type="number" className={inp} value={form.qty40hq} onChange={e=>upd("qty40hq",e.target.value)} placeholder="0"/></Field>
+        <Field label="40HQ Freight" color="text-purple-500 font-bold"><input type="number" className={inp} value={form.freight40hq} onChange={e=>upd("freight40hq",e.target.value)} placeholder="0"/></Field>
+        <Field label="40HQ THC" color="text-purple-500 font-bold"><input type="number" className={inp} value={form.thc40hq} onChange={e=>upd("thc40hq",e.target.value)} placeholder="0"/></Field>
+        <div className={`rounded-lg px-3 py-2 flex flex-col justify-center ${dark?"bg-purple-900":"bg-purple-50"}`}>
+          <span className="text-xs text-purple-400">Total 40HQ</span>
+          <span className="font-bold text-purple-500">{calcTotal(form,"40").toLocaleString()} {form.currency}</span>
         </div>
-        {/* Other */}
         <Field label="Other Charges"><input type="number" className={inp} value={form.otherCharges} onChange={e=>upd("otherCharges",e.target.value)} placeholder="0"/></Field>
         <Field label="Currency"><select className={inp} value={form.currency} onChange={e=>upd("currency",e.target.value)}>{currencies.map(c=><option key={c}>{c}</option>)}</select></Field>
         <Field label="ETD"><input type="date" className={inp} value={form.etd} onChange={e=>upd("etd",e.target.value)}/></Field>
         <Field label="Cutoff"><input type="date" className={inp} value={form.cutoff} onChange={e=>upd("cutoff",e.target.value)}/></Field>
         <Field label="Validity"><input type="date" className={inp} value={form.validityDate} onChange={e=>upd("validityDate",e.target.value)}/></Field>
+        <Field label="Free Days"><input type="number" className={inp} value={form.freeDays} onChange={e=>upd("freeDays",e.target.value)} placeholder="14"/></Field>
         <Field label="Transit (days)"><input type="number" className={inp} value={form.transitTime} onChange={e=>upd("transitTime",e.target.value)} placeholder="30"/></Field>
         <div className="col-span-2 md:col-span-4"><Field label="Remarks"><input className={inp} value={form.remarks} onChange={e=>upd("remarks",e.target.value)} placeholder="Special conditions..."/></Field></div>
       </div>
       <div className="mt-4 flex items-center gap-3 flex-wrap">
-        <div className="bg-gray-800 text-white rounded-lg px-4 py-2">
-          <div className="text-xs text-gray-300">Grand Total</div>
+        <div className={`rounded-lg px-4 py-2 ${dark?"bg-slate-700":"bg-gray-800 text-white"}`}>
+          <div className={`text-xs ${dark?"text-slate-400":"text-gray-300"}`}>Grand Total</div>
           <div className="text-lg font-bold">{calcGrand(form).toLocaleString()} {form.currency}</div>
         </div>
         <div className="flex gap-2 ml-auto">
-          <button onClick={handleSaveDraft} className="bg-yellow-400 hover:bg-yellow-500 text-white text-sm font-semibold px-4 py-2 rounded-lg">{editDraftId?"Update Draft":"💾 Save Draft"}</button>
-          <button onClick={handleSaveQuote} className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">{editId?"Update Quote":"✅ Confirm Quote"}</button>
+          <Btn color="yellow" onClick={handleSaveDraft}>{editDraftId?"Update Draft":"💾 Save Draft"}</Btn>
+          <Btn color="green" onClick={handleSaveQuote}>{editId?"Update Quote":"✅ Confirm Quote"}</Btn>
         </div>
       </div>
     </div>
   );
 
-  // History Modal content
+  // ── History Modal Content ──────────────────────────
   const HistoryContent=()=>{
     if(!historyModal)return null;
     const isFwd=historyModal.type==="fwd";
@@ -249,180 +450,286 @@ function App(){
     const qs=isFwd?getFwdHistory(profile?.name):getLineHistory(profile?.name);
     return(
       <div>
-        <div className="grid grid-cols-2 gap-2 mb-4 text-sm">
-          <div><span className="text-gray-400">Code:</span> <b>{profile?.code||"—"}</b></div>
-          {isFwd?(
-            <>
-              <div><span className="text-gray-400">Contact:</span> <b>{profile?.contact||"—"}</b></div>
-              <div><span className="text-gray-400">Email:</span> <b>{profile?.email||"—"}</b></div>
-              <div><span className="text-gray-400">Phone:</span> <b>{profile?.phone||"—"}</b></div>
-            </>
-          ):(
-            <>
-              <div><span className="text-gray-400">Routes:</span> <b>{profile?.routes||"—"}</b></div>
-              <div><span className="text-gray-400">Free Days:</span> <b>{profile?.freeDays||"—"}</b></div>
-              <div><span className="text-gray-400">Standard THC:</span> <b>{profile?.thcStandard||"—"}</b></div>
-            </>
-          )}
+        <div className={`grid grid-cols-2 gap-2 mb-4 text-sm rounded-xl p-3 ${dark?"bg-slate-700":"bg-gray-50"}`}>
+          <div><span className={dark?"text-slate-400":"text-gray-400"}>Code: </span><b>{profile?.code||"—"}</b></div>
+          {isFwd?(<>
+            <div><span className={dark?"text-slate-400":"text-gray-400"}>Contact: </span><b>{profile?.contact||"—"}</b></div>
+            <div><span className={dark?"text-slate-400":"text-gray-400"}>Email: </span><b>{profile?.email||"—"}</b></div>
+            <div><span className={dark?"text-slate-400":"text-gray-400"}>Phone: </span><b>{profile?.phone||"—"}</b></div>
+          </>):(<>
+            <div><span className={dark?"text-slate-400":"text-gray-400"}>Routes: </span><b>{profile?.routes||"—"}</b></div>
+            <div><span className={dark?"text-slate-400":"text-gray-400"}>Free Days: </span><b>{profile?.freeDays||"—"}</b></div>
+            <div><span className={dark?"text-slate-400":"text-gray-400"}>THC 20ft: </span><b>{profile?.thc20Standard||"—"}</b></div>
+            <div><span className={dark?"text-slate-400":"text-gray-400"}>THC 40HQ: </span><b>{profile?.thc40Standard||"—"}</b></div>
+          </>)}
         </div>
-        {profile?.notes&&<div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600 mb-4">📝 {profile.notes}</div>}
-        <h3 className="text-sm font-bold text-gray-700 mb-2">📊 Rate History ({qs.length} quotes)</h3>
-        {qs.length===0?<p className="text-gray-400 text-sm">No quotes yet.</p>:(
-          <div className="overflow-x-auto rounded-xl border">
-            <table className="w-full text-xs">
-              <thead className="bg-gray-100 text-gray-600 uppercase">
-                <tr>{["Date","Forwarder","Line","POL","POD","20 Rate","40HQ Rate","Grand Total","CCY","ETD"].map(h=><th key={h} className="px-2 py-2 text-left whitespace-nowrap">{h}</th>)}</tr>
-              </thead>
-              <tbody>
-                {qs.map((q,i)=>(
-                  <tr key={i} className="border-t border-gray-100 hover:bg-blue-50">
-                    <td className="px-2 py-1.5 whitespace-nowrap">{q.date||"—"}</td>
-                    <td className="px-2 py-1.5 font-semibold">{q.forwarder}</td>
-                    <td className="px-2 py-1.5">{q.line||"—"}</td>
-                    <td className="px-2 py-1.5">{q.pol||"—"}</td>
-                    <td className="px-2 py-1.5">{q.pod||"—"}</td>
-                    <td className="px-2 py-1.5 text-blue-700 font-medium">{q.freight20||"—"}</td>
-                    <td className="px-2 py-1.5 text-purple-700 font-medium">{q.freight40hq||"—"}</td>
-                    <td className="px-2 py-1.5 font-bold">{q.grand?.toLocaleString()||"—"}</td>
-                    <td className="px-2 py-1.5">{q.currency}</td>
-                    <td className="px-2 py-1.5 whitespace-nowrap">{q.etd||"—"}</td>
-                  </tr>
+        {profile?.notes&&<div className={`rounded-lg p-3 text-sm mb-4 ${dark?"bg-slate-700 text-slate-300":"bg-gray-50 text-gray-600"}`}>📝 {profile.notes}</div>}
+        <h3 className="text-sm font-bold mb-2">📊 Rate History ({qs.length} quotes)</h3>
+        {qs.length===0?<p className={`text-sm ${dark?"text-slate-400":"text-gray-400"}`}>No quotes yet.</p>:(
+          <>
+            <div className="overflow-x-auto rounded-xl border mb-3" style={{maxHeight:260}}>
+              <table className="w-full text-xs">
+                <thead className={`sticky top-0 ${dark?"bg-slate-700":"bg-gray-100"}`}>
+                  <tr>{["Date","Forwarder","Line","POL→POD","20 Rate","20 THC","40HQ Rate","40HQ THC","Grand","CCY","ETD"].map(h=><th key={h} className="px-2 py-2 text-left whitespace-nowrap">{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {qs.map((q,i)=>(
+                    <tr key={i} className={`border-t ${dark?"border-slate-700 hover:bg-slate-700":"border-gray-100 hover:bg-blue-50"}`}>
+                      <td className="px-2 py-1.5">{q.date||"—"}</td>
+                      <td className="px-2 py-1.5 font-semibold">{q.forwarder}</td>
+                      <td className="px-2 py-1.5">{q.line||"—"}</td>
+                      <td className="px-2 py-1.5">{q.pol||"—"}→{q.pod||"—"}</td>
+                      <td className="px-2 py-1.5 text-blue-500 font-medium">{q.freight20||"—"}</td>
+                      <td className="px-2 py-1.5 text-blue-400">{q.thc20||"—"}</td>
+                      <td className="px-2 py-1.5 text-purple-500 font-medium">{q.freight40hq||"—"}</td>
+                      <td className="px-2 py-1.5 text-purple-400">{q.thc40hq||"—"}</td>
+                      <td className="px-2 py-1.5 font-bold">{q.grand?.toLocaleString()||"—"}</td>
+                      <td className="px-2 py-1.5">{q.currency}</td>
+                      <td className="px-2 py-1.5">{q.etd||"—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {qs.length>0&&(
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  {label:"Lowest 20ft Rate",val:qs.filter(q=>q.freight20).length?`$${Math.min(...qs.filter(q=>q.freight20).map(q=>parseFloat(q.freight20))).toLocaleString()}`:"—",color:"text-green-500"},
+                  {label:"Lowest 40HQ Rate",val:qs.filter(q=>q.freight40hq).length?`$${Math.min(...qs.filter(q=>q.freight40hq).map(q=>parseFloat(q.freight40hq))).toLocaleString()}`:"—",color:"text-green-500"},
+                  {label:"Avg Grand Total",val:`$${Math.round(qs.reduce((s,q)=>s+(q.grand||0),0)/qs.length).toLocaleString()}`,color:"text-blue-500"},
+                ].map(({label,val,color})=>(
+                  <div key={label} className={`rounded-xl p-3 text-center ${dark?"bg-slate-700":"bg-gray-50"}`}>
+                    <div className={`text-base font-bold ${color}`}>{val}</div>
+                    <div className={`text-xs ${dark?"text-slate-400":"text-gray-400"}`}>{label}</div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {qs.length>0&&(
-          <div className="grid grid-cols-3 gap-3 mt-4">
-            {[
-              {label:"Lowest 20ft",val:Math.min(...qs.filter(q=>q.freight20).map(q=>parseFloat(q.freight20))).toLocaleString(),color:"text-green-700"},
-              {label:"Lowest 40HQ",val:Math.min(...qs.filter(q=>q.freight40hq).map(q=>parseFloat(q.freight40hq))).toLocaleString(),color:"text-green-700"},
-              {label:"Avg Grand",val:Math.round(qs.reduce((s,q)=>s+(q.grand||0),0)/qs.length).toLocaleString(),color:"text-blue-700"},
-            ].map(({label,val,color})=>(
-              <div key={label} className="bg-gray-50 rounded-xl p-3 text-center">
-                <div className={`text-lg font-bold ${color}`}>{val}</div>
-                <div className="text-xs text-gray-400">{label}</div>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </div>
     );
   };
 
+  const navBtn=(t,label,active)=>(
+    <button onClick={()=>setTab(t)} className={`text-sm font-semibold px-3 py-2 rounded-lg border transition-colors ${tab===t||active?(dark?"bg-blue-600 text-white border-blue-600":"bg-blue-600 text-white border-blue-600"):(dark?"bg-slate-800 text-slate-300 border-slate-600 hover:bg-slate-700":"bg-white text-gray-600 border-gray-300 hover:bg-gray-50")}`}>{label}</button>
+  );
+
   return(
-    <div className="min-h-screen bg-gray-50 p-4">
+    <DarkCtx.Provider value={{dark}}>
+    <div className={`min-h-screen ${bg} p-3`}>
       <div className="max-w-7xl mx-auto">
 
-        {/* API Key Modal */}
+        {/* Modals */}
         {showKeyModal&&(
           <Modal title="🔑 Gemini API Key" onClose={()=>setShowKeyModal(false)}>
-            <p className="text-xs text-gray-500 mb-3">Free from aistudio.google.com — saved in browser only.</p>
+            <p className={`text-xs mb-3 ${dark?"text-slate-400":"text-gray-500"}`}>Free from aistudio.google.com</p>
             <input className={inp} type="password" placeholder="AIzaSy..." value={apiKey} onChange={e=>setApiKey(e.target.value)}/>
-            <button onClick={()=>{localStorage.setItem("gemini_key",apiKey);setShowKeyModal(false);handleParse();}}
-              className="mt-3 w-full bg-blue-600 text-white text-sm font-semibold py-2 rounded-lg">Save & Parse</button>
+            <Btn color="blue" className="mt-3 w-full" onClick={()=>{localStorage.setItem("gemini_key",apiKey);setShowKeyModal(false);handleParse();}}>Save & Parse</Btn>
           </Modal>
         )}
 
-        {/* Forwarder Modal */}
         {fwdModal&&(
           <Modal title={fwdForm.id?"✏️ Edit Forwarder":"🏢 New Forwarder"} onClose={()=>{setFwdModal(null);setFwdForm({...emptyFwd});}}>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2"><Field label="Company Name *"><input className={inp} value={fwdForm.name} onChange={e=>setFwdForm(p=>({...p,name:e.target.value}))} placeholder="e.g. Transmar"/></Field></div>
-              <Field label="Code"><input className={inp} value={fwdForm.code} onChange={e=>setFwdForm(p=>({...p,code:e.target.value}))} placeholder="e.g. TRM"/></Field>
-              <Field label="Contact Person"><input className={inp} value={fwdForm.contact} onChange={e=>setFwdForm(p=>({...p,contact:e.target.value}))} placeholder="Name"/></Field>
-              <Field label="Email"><input className={inp} value={fwdForm.email} onChange={e=>setFwdForm(p=>({...p,email:e.target.value}))} placeholder="email@company.com"/></Field>
-              <Field label="Phone"><input className={inp} value={fwdForm.phone} onChange={e=>setFwdForm(p=>({...p,phone:e.target.value}))} placeholder="+20..."/></Field>
-              <div className="col-span-2"><Field label="Notes"><textarea className={inp+" h-20 resize-none"} value={fwdForm.notes} onChange={e=>setFwdForm(p=>({...p,notes:e.target.value}))} placeholder="Any notes..."/></Field></div>
+              <Field label="Code"><input className={inp} value={fwdForm.code} onChange={e=>setFwdForm(p=>({...p,code:e.target.value}))} placeholder="TRM"/></Field>
+              <Field label="Contact Person"><input className={inp} value={fwdForm.contact} onChange={e=>setFwdForm(p=>({...p,contact:e.target.value}))}/></Field>
+              <Field label="Email"><input className={inp} value={fwdForm.email} onChange={e=>setFwdForm(p=>({...p,email:e.target.value}))}/></Field>
+              <Field label="Phone"><input className={inp} value={fwdForm.phone} onChange={e=>setFwdForm(p=>({...p,phone:e.target.value}))}/></Field>
+              <div className="col-span-2"><Field label="Notes"><textarea className={inp+" h-16 resize-none"} value={fwdForm.notes} onChange={e=>setFwdForm(p=>({...p,notes:e.target.value}))}/></Field></div>
             </div>
-            <button onClick={saveFwd} className="mt-4 w-full bg-green-600 text-white text-sm font-semibold py-2 rounded-lg">💾 Save Forwarder</button>
+            <Btn color="green" className="mt-4 w-full" onClick={saveFwd}>💾 Save Forwarder</Btn>
           </Modal>
         )}
 
-        {/* Line Modal */}
         {lineModal&&(
           <Modal title={lineForm.id?"✏️ Edit Line":"🚢 New Shipping Line"} onClose={()=>{setLineModal(null);setLineForm({...emptyLine});}}>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2"><Field label="Line Name *"><input className={inp} value={lineForm.name} onChange={e=>setLineForm(p=>({...p,name:e.target.value}))} placeholder="e.g. MSC"/></Field></div>
-              <Field label="Code"><input className={inp} value={lineForm.code} onChange={e=>setLineForm(p=>({...p,code:e.target.value}))} placeholder="e.g. MSC"/></Field>
-              <Field label="Standard Free Days"><input type="number" className={inp} value={lineForm.freeDays} onChange={e=>setLineForm(p=>({...p,freeDays:e.target.value}))} placeholder="14"/></Field>
-              <div className="col-span-2"><Field label="Routes"><input className={inp} value={lineForm.routes} onChange={e=>setLineForm(p=>({...p,routes:e.target.value}))} placeholder="e.g. China → Egypt, China → Turkey"/></Field></div>
-              <div className="col-span-2"><Field label="Standard THC"><input className={inp} value={lineForm.thcStandard} onChange={e=>setLineForm(p=>({...p,thcStandard:e.target.value}))} placeholder="e.g. $150 20ft / $200 40HQ"/></Field></div>
-              <div className="col-span-2"><Field label="Notes"><textarea className={inp+" h-20 resize-none"} value={lineForm.notes} onChange={e=>setLineForm(p=>({...p,notes:e.target.value}))} placeholder="Transit times, reliability, issues..."/></Field></div>
+              <Field label="Code"><input className={inp} value={lineForm.code} onChange={e=>setLineForm(p=>({...p,code:e.target.value}))}/></Field>
+              <Field label="Standard Free Days"><input type="number" className={inp} value={lineForm.freeDays} onChange={e=>setLineForm(p=>({...p,freeDays:e.target.value}))}/></Field>
+              <div className="col-span-2"><Field label="Routes"><input className={inp} value={lineForm.routes} onChange={e=>setLineForm(p=>({...p,routes:e.target.value}))} placeholder="China → Egypt, China → Turkey"/></Field></div>
+              <Field label="Standard THC 20ft"><input className={inp} value={lineForm.thc20Standard} onChange={e=>setLineForm(p=>({...p,thc20Standard:e.target.value}))} placeholder="e.g. 150"/></Field>
+              <Field label="Standard THC 40HQ"><input className={inp} value={lineForm.thc40Standard} onChange={e=>setLineForm(p=>({...p,thc40Standard:e.target.value}))} placeholder="e.g. 200"/></Field>
+              <div className="col-span-2"><Field label="Notes"><textarea className={inp+" h-16 resize-none"} value={lineForm.notes} onChange={e=>setLineForm(p=>({...p,notes:e.target.value}))}/></Field></div>
             </div>
-            <button onClick={saveLine} className="mt-4 w-full bg-green-600 text-white text-sm font-semibold py-2 rounded-lg">💾 Save Line</button>
+            <Btn color="green" className="mt-4 w-full" onClick={saveLine}>💾 Save Line</Btn>
           </Modal>
         )}
 
-        {/* History Modal */}
+        {projectModal&&(
+          <Modal title={projectForm.id?"✏️ Edit Project":"📁 New Project"} onClose={()=>{setProjectModal(null);setProjectForm({...emptyProject});}} wide>
+            <div className="grid grid-cols-2 gap-3 mb-4 md:grid-cols-3">
+              <div className="col-span-2 md:col-span-1"><Field label="Project Name *"><input className={inp} value={projectForm.name} onChange={e=>setProjectForm(p=>({...p,name:e.target.value}))} placeholder="e.g. April Shipment"/></Field></div>
+              <Field label="Factory"><input className={inp} value={projectForm.factory} onChange={e=>setProjectForm(p=>({...p,factory:e.target.value}))} placeholder="e.g. Fresh Electric"/></Field>
+              <Field label="Month">
+                <select className={inp} value={projectForm.month} onChange={e=>setProjectForm(p=>({...p,month:e.target.value}))}>
+                  <option value="">— Month —</option>
+                  {MONTHS.map(m=><option key={m} value={m}>{m}</option>)}
+                </select>
+              </Field>
+              <Field label="Year"><input type="number" className={inp} value={projectForm.year} onChange={e=>setProjectForm(p=>({...p,year:e.target.value}))} placeholder={new Date().getFullYear()}/></Field>
+              <Field label="POL (Origin)"><input className={inp} value={projectForm.pol} onChange={e=>setProjectForm(p=>({...p,pol:e.target.value}))} placeholder="Shanghai"/></Field>
+              <Field label="POD (Destination)"><input className={inp} value={projectForm.pod} onChange={e=>setProjectForm(p=>({...p,pod:e.target.value}))} placeholder="Alexandria"/></Field>
+              <div className="col-span-2 md:col-span-3"><Field label="Notes"><input className={inp} value={projectForm.notes} onChange={e=>setProjectForm(p=>({...p,notes:e.target.value}))} placeholder="Any notes..."/></Field></div>
+            </div>
+
+            <div className={`rounded-xl p-4 mb-4 border ${dark?"bg-slate-700 border-slate-600":"bg-gray-50 border-gray-200"}`}>
+              <h3 className="text-sm font-bold mb-3">📦 Shipment Requests</h3>
+              <div className="grid grid-cols-3 gap-2 mb-2">
+                <div className="col-span-3 md:col-span-1"><Field label="Description"><input className={inp} value={reqForm.description} onChange={e=>setReqForm(p=>({...p,description:e.target.value}))} placeholder="e.g. Washing machine parts"/></Field></div>
+                <Field label="Qty 20ft"><input type="number" className={inp} value={reqForm.qty20} onChange={e=>setReqForm(p=>({...p,qty20:e.target.value}))} placeholder="0"/></Field>
+                <Field label="Qty 40HQ"><input type="number" className={inp} value={reqForm.qty40} onChange={e=>setReqForm(p=>({...p,qty40:e.target.value}))} placeholder="0"/></Field>
+              </div>
+              <Btn color="blue" size="xs" onClick={addRequest}>＋ Add Request</Btn>
+              {(projectForm.requests||[]).length>0&&(
+                <div className="mt-3 space-y-2">
+                  {projectForm.requests.map(r=>(
+                    <div key={r.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${dark?"bg-slate-800":"bg-white"}`}>
+                      <span className="font-medium">{r.description}</span>
+                      <div className="flex gap-3 items-center text-xs">
+                        {r.qty20>0&&<span className="text-blue-500 font-semibold">{r.qty20}x 20ft</span>}
+                        {r.qty40>0&&<span className="text-purple-500 font-semibold">{r.qty40}x 40HQ</span>}
+                        <button onClick={()=>removeRequest(r.id)} className="text-red-400 hover:text-red-600">🗑</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <Btn color="green" className="w-full" onClick={saveProject}>💾 Save Project</Btn>
+          </Modal>
+        )}
+
+        {activeProject&&(
+          <Modal title={`📁 ${activeProject.name} — ${activeProject.month} ${activeProject.year}`} onClose={()=>setActiveProject(null)} wide>
+            <div className={`grid grid-cols-2 gap-2 text-sm mb-4 rounded-xl p-3 ${dark?"bg-slate-700":"bg-gray-50"}`}>
+              <div><span className={dark?"text-slate-400":"text-gray-400"}>Factory: </span><b>{activeProject.factory||"—"}</b></div>
+              <div><span className={dark?"text-slate-400":"text-gray-400"}>Route: </span><b>{activeProject.pol||"—"} → {activeProject.pod||"—"}</b></div>
+            </div>
+            {activeProject.notes&&<div className={`rounded-lg p-3 text-sm mb-4 ${dark?"bg-slate-700":"bg-gray-50"}`}>📝 {activeProject.notes}</div>}
+            {(activeProject.requests||[]).length>0&&(
+              <div className="mb-4">
+                <h3 className="text-sm font-bold mb-2">📦 Shipment Requests</h3>
+                <div className="grid gap-2">
+                  {activeProject.requests.map(r=>(
+                    <div key={r.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm border ${dark?"bg-slate-700 border-slate-600":"bg-gray-50 border-gray-200"}`}>
+                      <span className="font-medium">{r.description}</span>
+                      <div className="flex gap-3 text-xs">
+                        {r.qty20>0&&<span className="text-blue-500 font-semibold">{r.qty20}x 20ft</span>}
+                        {r.qty40>0&&<span className="text-purple-500 font-semibold">{r.qty40}x 40HQ</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <h3 className="text-sm font-bold mb-2">📊 Linked Quotes ({getProjectQuotes(activeProject.id).length})</h3>
+            {getProjectQuotes(activeProject.id).length===0?
+              <p className={`text-sm ${dark?"text-slate-400":"text-gray-400"}`}>No quotes linked yet. Add a draft and select this project.</p>:(
+              <div className="overflow-x-auto rounded-xl border text-xs">
+                <table className="w-full">
+                  <thead className={`${dark?"bg-slate-700":"bg-gray-100"}`}>
+                    <tr>{["Date","Forwarder","Line","20 Rate","20 THC","40HQ Rate","40HQ THC","Grand","CCY","ETD"].map(h=><th key={h} className="px-2 py-2 text-left whitespace-nowrap">{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {getProjectQuotes(activeProject.id).map((q,i)=>(
+                      <tr key={i} className={`border-t ${dark?"border-slate-700":"border-gray-100"}`}>
+                        <td className="px-2 py-1.5">{q.date||"—"}</td>
+                        <td className="px-2 py-1.5 font-semibold">{q.forwarder}</td>
+                        <td className="px-2 py-1.5">{q.line||"—"}</td>
+                        <td className="px-2 py-1.5 text-blue-500">{q.freight20||"—"}</td>
+                        <td className="px-2 py-1.5 text-blue-400">{q.thc20||"—"}</td>
+                        <td className="px-2 py-1.5 text-purple-500">{q.freight40hq||"—"}</td>
+                        <td className="px-2 py-1.5 text-purple-400">{q.thc40hq||"—"}</td>
+                        <td className="px-2 py-1.5 font-bold">{q.grand?.toLocaleString()||"—"}</td>
+                        <td className="px-2 py-1.5">{q.currency}</td>
+                        <td className="px-2 py-1.5">{q.etd||"—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="mt-3">
+              <Btn color="blue" size="xs" onClick={()=>{setActiveProject(null);openForm("draft","drafts",{projectId:String(activeProject.id),pol:activeProject.pol,pod:activeProject.pod});}}>＋ Add Quote to this Project</Btn>
+            </div>
+          </Modal>
+        )}
+
         {historyModal&&(
-          <Modal title={historyModal.type==="fwd"?`🏢 ${data.forwarders.find(f=>f.id===historyModal.id)?.name} — History`:`🚢 ${data.lines.find(l=>l.id===historyModal.id)?.name} — History`} onClose={()=>setHistoryModal(null)}>
+          <Modal title={historyModal.type==="fwd"?`🏢 ${data.forwarders.find(f=>f.id===historyModal.id)?.name}`:`🚢 ${data.lines.find(l=>l.id===historyModal.id)?.name}`} onClose={()=>setHistoryModal(null)} wide>
             <HistoryContent/>
           </Modal>
         )}
 
-        {/* HEADER */}
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        {/* ── HEADER ── */}
+        <div className={`flex items-center justify-between mb-4 flex-wrap gap-2 sticky top-0 z-30 py-2 px-3 rounded-2xl shadow ${dark?"bg-slate-900":"bg-gray-50"}`}>
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">🚢 Freight Rate Dashboard</h1>
-            <p className="text-sm text-gray-500">{data.quotes.length} quotes · {data.drafts.length} drafts · {data.forwarders.length} forwarders · {data.lines.length} lines</p>
+            <h1 className="text-xl font-bold">🚢 Freight Dashboard</h1>
+            <p className={`text-xs ${dark?"text-slate-400":"text-gray-400"}`}>{data.quotes.length} quotes · {data.drafts.length} drafts · {data.projects.length} projects</p>
           </div>
-          <div className="flex gap-2 flex-wrap items-center">
-            <button onClick={()=>openForm("draft","drafts")} className="text-sm font-semibold px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">＋ New Draft</button>
-            <button onClick={()=>{setPasteOpen(p=>!p);setTab("dashboard");}} className={`text-sm font-semibold px-4 py-2 rounded-lg border ${pasteOpen?"bg-purple-700 text-white border-purple-700":"bg-white text-purple-700 border-purple-400"}`}>🤖 AI Parser</button>
-            <button onClick={()=>setTab("drafts")} className={`text-sm font-semibold px-4 py-2 rounded-lg border ${tab==="drafts"?"bg-gray-700 text-white":"bg-white text-gray-600 border-gray-300"}`}>
-              📋 Drafts {data.drafts.length>0&&<span className="ml-1 bg-yellow-400 text-white text-xs px-1.5 py-0.5 rounded-full">{data.drafts.length}</span>}
-            </button>
-            <button onClick={()=>setTab("forwarders")} className={`text-sm font-semibold px-4 py-2 rounded-lg border ${tab==="forwarders"?"bg-orange-600 text-white":"bg-white text-orange-600 border-orange-300"}`}>🏢 Forwarders</button>
-            <button onClick={()=>setTab("lines")} className={`text-sm font-semibold px-4 py-2 rounded-lg border ${tab==="lines"?"bg-teal-600 text-white":"bg-white text-teal-600 border-teal-300"}`}>🚢 Lines</button>
-            {data.quotes.length>0&&<button onClick={exportCSV} className="text-sm font-semibold px-3 py-2 rounded-lg bg-emerald-600 text-white">⬇ CSV</button>}
+          <div className="flex gap-1.5 flex-wrap items-center">
+            <Btn color="blue" onClick={()=>openForm("draft","drafts")}>＋ New</Btn>
+            <button onClick={()=>{setPasteOpen(p=>!p);setTab("dashboard");}} className={`text-sm font-semibold px-3 py-2 rounded-lg border ${pasteOpen?"bg-purple-600 text-white border-purple-600":(dark?"bg-slate-800 text-purple-400 border-slate-600":"bg-white text-purple-600 border-purple-300")}`}>🤖 AI</button>
+            {navBtn("drafts",`📋 ${data.drafts.length>0?`(${data.drafts.length})`:"Drafts"}`)}
+            {navBtn("projects","📁 Projects")}
+            {navBtn("forwarders","🏢 Fwd")}
+            {navBtn("lines","🚢 Lines")}
+            {navBtn("analytics","📊 Analytics")}
+            <button onClick={toggleDark} className={`text-sm px-3 py-2 rounded-lg border ${dark?"bg-slate-700 text-yellow-300 border-slate-600":"bg-white text-gray-600 border-gray-300"}`}>{dark?"☀️":"🌙"}</button>
+            <div className="flex gap-1">
+              {data.quotes.length>0&&<button onClick={exportCSV} className="text-xs font-semibold px-2 py-2 rounded-lg bg-emerald-600 text-white">⬇CSV</button>}
+              <button onClick={exportJSON} className="text-xs font-semibold px-2 py-2 rounded-lg bg-slate-600 text-white">⬇JSON</button>
+              <label className="text-xs font-semibold px-2 py-2 rounded-lg bg-slate-500 text-white cursor-pointer">⬆JSON<input type="file" accept=".json" className="hidden" onChange={importJSON}/></label>
+            </div>
           </div>
         </div>
 
         {/* AI PARSER */}
         {pasteOpen&&(
-          <div className="bg-white rounded-2xl shadow-md p-5 mb-5 border border-purple-100">
+          <div className={`rounded-2xl shadow-md p-5 mb-5 border ${card} border-purple-400`}>
             <div className="flex justify-between mb-2">
-              <h2 className="text-base font-bold text-gray-700">🤖 AI Quote Parser</h2>
-              <button onClick={()=>{setPasteOpen(false);setParsed(null);setPasteText("");}} className="text-gray-400 hover:text-red-500 text-xl">✕</button>
+              <h2 className="text-base font-bold">🤖 AI Quote Parser</h2>
+              <button onClick={()=>{setPasteOpen(false);setParsed(null);setPasteText("");}} className="text-gray-400 hover:text-red-400 text-xl">✕</button>
             </div>
-            <textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm h-28 resize-none focus:outline-none focus:ring-2 focus:ring-purple-400"
-              placeholder="Paste email, WhatsApp, or rate sheet here..."
-              value={pasteText} onChange={e=>{setPasteText(e.target.value);setParsed(null);setParseError("");}}/>
-            {parseError&&<p className="text-red-500 text-xs mt-1">{parseError}</p>}
-            <div className="flex gap-2 mt-2">
-              <button onClick={handleParse} disabled={parsing||!pasteText.trim()} className="bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white text-sm font-semibold px-5 py-2 rounded-lg">{parsing?"Parsing...":"Parse →"}</button>
-              <button onClick={()=>setShowKeyModal(true)} className="text-xs text-gray-400 hover:text-gray-600 underline">🔑 API Key</button>
+            <textarea className={`${inp} h-28 resize-none mb-2`} placeholder="Paste email, WhatsApp, or rate sheet..." value={pasteText} onChange={e=>{setPasteText(e.target.value);setParsed(null);setParseError("");}}/>
+            {parseError&&<p className="text-red-500 text-xs mb-1">{parseError}</p>}
+            <div className="flex gap-2">
+              <Btn color="purple" disabled={parsing||!pasteText.trim()} onClick={handleParse}>{parsing?"Parsing...":"Parse →"}</Btn>
+              <button onClick={()=>setShowKeyModal(true)} className={`text-xs underline ${dark?"text-slate-400":"text-gray-400"}`}>🔑 API Key</button>
             </div>
             {parsed&&(
               <div className="mt-4">
-                <p className="text-sm font-bold text-gray-700 mb-2">✅ {parsed.length} quote{parsed.length!==1?"s":""} found</p>
-                <div className="overflow-x-auto rounded-xl border text-xs mb-3">
+                <p className="text-sm font-bold mb-2">✅ {parsed.length} quote{parsed.length!==1?"s":""} found</p>
+                <div className={`overflow-x-auto rounded-xl border text-xs mb-3 ${dark?"border-slate-700":"border-gray-200"}`}>
                   <table className="w-full">
-                    <thead className="bg-gray-100 text-gray-600 uppercase">
-                      <tr>{["Forwarder","Line","POL","POD","20Rate","40Rate","Grand","ETD","Cutoff"].map(h=><th key={h} className="px-2 py-1.5 text-left whitespace-nowrap">{h}</th>)}</tr>
+                    <thead className={dark?"bg-slate-700":"bg-gray-100"}>
+                      <tr>{["Forwarder","Line","POL","POD","20Rate","20THC","40Rate","40THC","Grand","ETD"].map(h=><th key={h} className="px-2 py-1.5 text-left whitespace-nowrap">{h}</th>)}</tr>
                     </thead>
                     <tbody>
                       {parsed.map((q,i)=>(
-                        <tr key={i} className="border-t">
+                        <tr key={i} className={`border-t ${dark?"border-slate-700":"border-gray-100"}`}>
                           <td className="px-2 py-1.5 font-semibold">{q.forwarder||"—"}</td>
                           <td className="px-2 py-1.5">{q.line||"—"}</td>
                           <td className="px-2 py-1.5">{q.pol||"—"}</td>
                           <td className="px-2 py-1.5">{q.pod||"—"}</td>
-                          <td className="px-2 py-1.5 text-blue-700 font-bold">{q.freight20||"—"}</td>
-                          <td className="px-2 py-1.5 text-purple-700 font-bold">{q.freight40hq||"—"}</td>
+                          <td className="px-2 py-1.5 text-blue-500 font-bold">{q.freight20||"—"}</td>
+                          <td className="px-2 py-1.5 text-blue-400">{q.thc20||"—"}</td>
+                          <td className="px-2 py-1.5 text-purple-500 font-bold">{q.freight40hq||"—"}</td>
+                          <td className="px-2 py-1.5 text-purple-400">{q.thc40hq||"—"}</td>
                           <td className="px-2 py-1.5 font-bold">{q.grand?.toLocaleString()||"—"}</td>
                           <td className="px-2 py-1.5">{q.etd||"—"}</td>
-                          <td className="px-2 py-1.5">{q.cutoff||"—"}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={()=>confirmParsed(false)} className="bg-green-600 text-white text-sm font-semibold px-4 py-2 rounded-lg">✅ Add as Quotes</button>
-                  <button onClick={()=>confirmParsed(true)} className="bg-yellow-400 text-white text-sm font-semibold px-4 py-2 rounded-lg">💾 Save as Drafts</button>
-                  <button onClick={()=>setParsed(null)} className="bg-gray-200 text-gray-700 text-sm font-semibold px-4 py-2 rounded-lg">✕</button>
+                  <Btn color="green" size="xs" onClick={()=>confirmParsed(false)}>✅ Add as Quotes</Btn>
+                  <Btn color="yellow" size="xs" onClick={()=>confirmParsed(true)}>💾 Save as Drafts</Btn>
+                  <Btn color="gray" size="xs" onClick={()=>setParsed(null)}>✕</Btn>
                 </div>
               </div>
             )}
@@ -432,29 +739,30 @@ function App(){
         {/* FORM */}
         {formMode&&<div ref={formRef}><FormPanel mode={formMode}/></div>}
 
-        {/* DRAFTS TAB */}
+        {/* ── DRAFTS ── */}
         {tab==="drafts"&&(
           <div className="mb-6">
-            <h2 className="text-base font-bold text-gray-700 mb-3">📋 Drafts ({data.drafts.length})</h2>
-            {data.drafts.length===0?<div className="text-center py-12 text-gray-400 bg-white rounded-2xl border"><div className="text-4xl mb-2">📝</div><p>No drafts yet.</p></div>:(
+            <h2 className="text-base font-bold mb-3">📋 Drafts ({data.drafts.length})</h2>
+            {data.drafts.length===0?<div className={`text-center py-12 rounded-2xl border ${card}`}><div className="text-4xl mb-2">📝</div><p className={dark?"text-slate-400":"text-gray-400"}>No drafts yet.</p></div>:(
               <div className="grid gap-3">
                 {data.drafts.map(d=>(
-                  <div key={d.id} className="bg-white border border-yellow-200 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3 shadow-sm">
+                  <div key={d.id} className={`rounded-xl p-4 flex items-center justify-between flex-wrap gap-3 shadow-sm border ${card} border-l-4 border-l-yellow-400`}>
                     <div>
-                      <p className="font-bold text-gray-800">{d.forwarder||"Unnamed"} <span className="text-gray-400 font-normal text-sm">· {d.line||"—"} · {d.date||""}</span></p>
-                      <div className="flex gap-3 mt-1 flex-wrap text-xs text-gray-500">
+                      <p className="font-bold">{d.forwarder||"Unnamed"} <span className={`font-normal text-sm ${dark?"text-slate-400":"text-gray-400"}`}>· {d.line||"—"} · {d.date||""}</span></p>
+                      <div className={`flex gap-3 mt-1 flex-wrap text-xs ${dark?"text-slate-400":"text-gray-500"}`}>
                         {d.pol&&<span>POL: <b>{d.pol}</b></span>}
                         {d.pod&&<span>POD: <b>{d.pod}</b></span>}
-                        {d.freight20&&<span>20ft: <b className="text-blue-700">{parseFloat(d.freight20).toLocaleString()} {d.currency}</b></span>}
-                        {d.freight40hq&&<span>40HQ: <b className="text-purple-700">{parseFloat(d.freight40hq).toLocaleString()} {d.currency}</b></span>}
+                        {d.freight20&&<span>20ft: <b className="text-blue-500">{parseFloat(d.freight20).toLocaleString()} {d.currency}</b></span>}
+                        {d.freight40hq&&<span>40HQ: <b className="text-purple-500">{parseFloat(d.freight40hq).toLocaleString()} {d.currency}</b></span>}
                         {d.etd&&<span>ETD: {d.etd}</span>}
                         {d.cutoff&&<span className="text-orange-500">Cutoff: {d.cutoff}</span>}
+                        {d.projectId&&<span className="text-blue-400">📁 {data.projects.find(p=>String(p.id)===String(d.projectId))?.name||""}</span>}
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={()=>editDraft(d)} className="text-xs font-semibold px-3 py-1.5 border border-blue-300 text-blue-600 rounded-lg">✏️ Edit</button>
-                      <button onClick={()=>promoteDraft(d)} className="text-xs font-semibold px-3 py-1.5 bg-green-600 text-white rounded-lg">✅ Confirm</button>
-                      <button onClick={()=>persist({drafts:data.drafts.filter(x=>x.id!==d.id)})} className="text-xs font-semibold px-3 py-1.5 border border-red-200 text-red-400 rounded-lg">🗑</button>
+                    <div className="flex gap-1.5">
+                      <Btn color="ghost" size="xs" onClick={()=>editDraftFn(d)}>✏️</Btn>
+                      <Btn color="green" size="xs" onClick={()=>promoteDraft(d)}>✅ Confirm</Btn>
+                      <Btn color="ghost" size="xs" onClick={()=>persist({drafts:data.drafts.filter(x=>x.id!==d.id)})}>🗑</Btn>
                     </div>
                   </div>
                 ))}
@@ -463,38 +771,83 @@ function App(){
           </div>
         )}
 
-        {/* FORWARDERS TAB */}
+        {/* ── PROJECTS ── */}
+        {tab==="projects"&&(
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-bold">📁 Projects ({data.projects.length})</h2>
+              <Btn color="blue" onClick={()=>{setProjectForm({...emptyProject,year:new Date().getFullYear()});setProjectModal("new");}}>＋ New Project</Btn>
+            </div>
+            {data.projects.length===0?<div className={`text-center py-12 rounded-2xl border ${card}`}><div className="text-4xl mb-2">📁</div><p className={dark?"text-slate-400":"text-gray-400"}>No projects yet.</p></div>:(
+              <div className="grid gap-3 md:grid-cols-2">
+                {data.projects.map(p=>{
+                  const pqs=getProjectQuotes(p.id);
+                  const totalReq20=(p.requests||[]).reduce((s,r)=>s+(parseInt(r.qty20)||0),0);
+                  const totalReq40=(p.requests||[]).reduce((s,r)=>s+(parseInt(r.qty40)||0),0);
+                  return(
+                    <div key={p.id} className={`rounded-xl p-4 shadow-sm border ${card} border-l-4 border-l-blue-500`}>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-base">{p.name}</p>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${dark?"bg-blue-900 text-blue-300":"bg-blue-100 text-blue-700"}`}>{p.month} {p.year}</span>
+                          </div>
+                          <div className={`flex gap-3 mt-1 text-xs flex-wrap ${dark?"text-slate-400":"text-gray-500"}`}>
+                            {p.factory&&<span>🏭 {p.factory}</span>}
+                            {p.pol&&<span>🗺 {p.pol} → {p.pod}</span>}
+                            <span className={dark?"text-slate-300":"text-gray-600"}>{pqs.length} quotes linked</span>
+                          </div>
+                          {(p.requests||[]).length>0&&(
+                            <div className="flex gap-2 mt-2 text-xs">
+                              {totalReq20>0&&<span className="text-blue-500 font-semibold">📦 {totalReq20}x 20ft needed</span>}
+                              {totalReq40>0&&<span className="text-purple-500 font-semibold">📦 {totalReq40}x 40HQ needed</span>}
+                            </div>
+                          )}
+                          {p.notes&&<p className={`text-xs mt-1 italic ${dark?"text-slate-500":"text-gray-400"}`}>{p.notes}</p>}
+                        </div>
+                        <div className="flex gap-1 ml-2">
+                          <Btn color="ghost" size="xs" onClick={()=>setActiveProject(p)}>📊 View</Btn>
+                          <Btn color="ghost" size="xs" onClick={()=>{setProjectForm({...p});setProjectModal("edit");}}>✏️</Btn>
+                          <Btn color="ghost" size="xs" onClick={()=>deleteProject(p.id)}>🗑</Btn>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── FORWARDERS ── */}
         {tab==="forwarders"&&(
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-bold text-gray-700">🏢 Forwarders ({data.forwarders.length})</h2>
-              <button onClick={()=>{setFwdForm({...emptyFwd});setFwdModal("new");}} className="bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold px-4 py-2 rounded-lg">＋ Add Forwarder</button>
+              <h2 className="text-base font-bold">🏢 Forwarders ({data.forwarders.length})</h2>
+              <Btn color="orange" onClick={()=>{setFwdForm({...emptyFwd});setFwdModal("new");}}>＋ Add Forwarder</Btn>
             </div>
-            {data.forwarders.length===0?<div className="text-center py-12 text-gray-400 bg-white rounded-2xl border"><div className="text-4xl mb-2">🏢</div><p>No forwarders yet.</p></div>:(
+            {data.forwarders.length===0?<div className={`text-center py-12 rounded-2xl border ${card}`}><div className="text-4xl mb-2">🏢</div><p className={dark?"text-slate-400":"text-gray-400"}>No forwarders yet.</p></div>:(
               <div className="grid gap-3 md:grid-cols-2">
-                {data.forwarders.map(f=>{
-                  const qs=getFwdHistory(f.name);
-                  const minRate=qs.length?Math.min(...qs.filter(q=>q.freight20).map(q=>parseFloat(q.freight20))):null;
+                {data.forwarders.map(f=>{const qs=getFwdHistory(f.name);const min20=qs.filter(q=>q.freight20).length?Math.min(...qs.filter(q=>q.freight20).map(q=>parseFloat(q.freight20))):null;
                   return(
-                    <div key={f.id} className="bg-white border border-orange-100 rounded-xl p-4 shadow-sm">
+                    <div key={f.id} className={`rounded-xl p-4 shadow-sm border ${card} border-l-4 border-l-orange-400`}>
                       <div className="flex items-start justify-between">
                         <div>
-                          <p className="font-bold text-gray-800 text-base">{f.name} <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full ml-1">{f.code}</span></p>
-                          <div className="flex gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                          <p className="font-bold">{f.name} <span className={`text-xs px-1.5 py-0.5 rounded-full ml-1 ${dark?"bg-orange-900 text-orange-300":"bg-orange-100 text-orange-700"}`}>{f.code}</span></p>
+                          <div className={`flex gap-3 mt-1 text-xs flex-wrap ${dark?"text-slate-400":"text-gray-500"}`}>
                             {f.contact&&<span>👤 {f.contact}</span>}
                             {f.email&&<span>✉️ {f.email}</span>}
                             {f.phone&&<span>📞 {f.phone}</span>}
                           </div>
-                          {f.notes&&<p className="text-xs text-gray-400 mt-1 italic">{f.notes}</p>}
-                          <div className="flex gap-3 mt-2 text-xs">
-                            <span className="text-gray-500">{qs.length} quotes</span>
-                            {minRate&&<span className="text-green-600 font-semibold">Lowest 20ft: ${minRate.toLocaleString()}</span>}
+                          <div className="flex gap-3 mt-1.5 text-xs">
+                            <span className={dark?"text-slate-400":"text-gray-400"}>{qs.length} quotes</span>
+                            {min20&&<span className="text-green-500 font-semibold">Lowest 20ft: ${min20.toLocaleString()}</span>}
                           </div>
                         </div>
-                        <div className="flex gap-1 ml-2">
-                          <button onClick={()=>setHistoryModal({type:"fwd",id:f.id})} className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded-lg font-semibold">📊</button>
-                          <button onClick={()=>openEditFwd(f)} className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-lg font-semibold">✏️</button>
-                          <button onClick={()=>deleteFwd(f.id)} className="text-xs px-2 py-1 bg-red-50 text-red-400 rounded-lg font-semibold">🗑</button>
+                        <div className="flex gap-1">
+                          <Btn color="ghost" size="xs" onClick={()=>setHistoryModal({type:"fwd",id:f.id})}>📊</Btn>
+                          <Btn color="ghost" size="xs" onClick={()=>{setFwdForm({...f});setFwdModal("edit");}}>✏️</Btn>
+                          <Btn color="ghost" size="xs" onClick={()=>deleteFwd(f.id)}>🗑</Btn>
                         </div>
                       </div>
                     </div>
@@ -505,38 +858,36 @@ function App(){
           </div>
         )}
 
-        {/* LINES TAB */}
+        {/* ── LINES ── */}
         {tab==="lines"&&(
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-bold text-gray-700">🚢 Shipping Lines ({data.lines.length})</h2>
-              <button onClick={()=>{setLineForm({...emptyLine});setLineModal("new");}} className="bg-teal-500 hover:bg-teal-600 text-white text-sm font-semibold px-4 py-2 rounded-lg">＋ Add Line</button>
+              <h2 className="text-base font-bold">🚢 Shipping Lines ({data.lines.length})</h2>
+              <Btn color="teal" onClick={()=>{setLineForm({...emptyLine});setLineModal("new");}}>＋ Add Line</Btn>
             </div>
-            {data.lines.length===0?<div className="text-center py-12 text-gray-400 bg-white rounded-2xl border"><div className="text-4xl mb-2">🚢</div><p>No lines yet.</p></div>:(
+            {data.lines.length===0?<div className={`text-center py-12 rounded-2xl border ${card}`}><div className="text-4xl mb-2">🚢</div><p className={dark?"text-slate-400":"text-gray-400"}>No lines yet.</p></div>:(
               <div className="grid gap-3 md:grid-cols-2">
-                {data.lines.map(l=>{
-                  const qs=getLineHistory(l.name);
-                  const minRate=qs.length?Math.min(...qs.filter(q=>q.freight20).map(q=>parseFloat(q.freight20))):null;
+                {data.lines.map(l=>{const qs=getLineHistory(l.name);const min20=qs.filter(q=>q.freight20).length?Math.min(...qs.filter(q=>q.freight20).map(q=>parseFloat(q.freight20))):null;
                   return(
-                    <div key={l.id} className="bg-white border border-teal-100 rounded-xl p-4 shadow-sm">
+                    <div key={l.id} className={`rounded-xl p-4 shadow-sm border ${card} border-l-4 border-l-teal-400`}>
                       <div className="flex items-start justify-between">
                         <div>
-                          <p className="font-bold text-gray-800 text-base">{l.name} <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full ml-1">{l.code}</span></p>
-                          <div className="flex gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                          <p className="font-bold">{l.name} <span className={`text-xs px-1.5 py-0.5 rounded-full ml-1 ${dark?"bg-teal-900 text-teal-300":"bg-teal-100 text-teal-700"}`}>{l.code}</span></p>
+                          <div className={`flex gap-3 mt-1 text-xs flex-wrap ${dark?"text-slate-400":"text-gray-500"}`}>
                             {l.routes&&<span>🗺 {l.routes}</span>}
                             {l.freeDays&&<span>📦 {l.freeDays} free days</span>}
-                            {l.thcStandard&&<span>💰 THC: {l.thcStandard}</span>}
+                            {l.thc20Standard&&<span>THC 20ft: {l.thc20Standard}</span>}
+                            {l.thc40Standard&&<span>THC 40HQ: {l.thc40Standard}</span>}
                           </div>
-                          {l.notes&&<p className="text-xs text-gray-400 mt-1 italic">{l.notes}</p>}
-                          <div className="flex gap-3 mt-2 text-xs">
-                            <span className="text-gray-500">{qs.length} quotes</span>
-                            {minRate&&<span className="text-green-600 font-semibold">Lowest 20ft: ${minRate.toLocaleString()}</span>}
+                          <div className="flex gap-3 mt-1.5 text-xs">
+                            <span className={dark?"text-slate-400":"text-gray-400"}>{qs.length} quotes</span>
+                            {min20&&<span className="text-green-500 font-semibold">Lowest 20ft: ${min20.toLocaleString()}</span>}
                           </div>
                         </div>
-                        <div className="flex gap-1 ml-2">
-                          <button onClick={()=>setHistoryModal({type:"line",id:l.id})} className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded-lg font-semibold">📊</button>
-                          <button onClick={()=>openEditLine(l)} className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-lg font-semibold">✏️</button>
-                          <button onClick={()=>deleteLine(l.id)} className="text-xs px-2 py-1 bg-red-50 text-red-400 rounded-lg font-semibold">🗑</button>
+                        <div className="flex gap-1">
+                          <Btn color="ghost" size="xs" onClick={()=>setHistoryModal({type:"line",id:l.id})}>📊</Btn>
+                          <Btn color="ghost" size="xs" onClick={()=>{setLineForm({...l});setLineModal("edit");}}>✏️</Btn>
+                          <Btn color="ghost" size="xs" onClick={()=>deleteLine(l.id)}>🗑</Btn>
                         </div>
                       </div>
                     </div>
@@ -547,104 +898,191 @@ function App(){
           </div>
         )}
 
-        {/* DASHBOARD TAB */}
+        {/* ── ANALYTICS ── */}
+        {tab==="analytics"&&(
+          <div className="mb-6">
+            <h2 className="text-base font-bold mb-4">📊 Analytics</h2>
+            {data.quotes.length<2?<div className={`text-center py-12 rounded-2xl border ${card}`}><div className="text-4xl mb-2">📊</div><p className={dark?"text-slate-400":"text-gray-400"}>Need at least 2 quotes to show analytics.</p></div>:(
+              <>
+                <TrendChart quotes={data.quotes} forwarders={data.forwarders}/>
+                <MonthCompare quotes={data.quotes}/>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── DASHBOARD ── */}
         {tab==="dashboard"&&(
           <>
+            {/* Search & Filter */}
             {data.quotes.length>0&&(
-              <div className="flex flex-wrap gap-2 mb-3 items-center">
-                <span className="text-xs text-gray-400">Sort:</span>
-                {[["grand","💰 Grand"],["total20","📦 20ft"],["total40","🏗 40HQ"],["etd","📅 ETD"],["transitTime","⏱ Transit"]].map(([val,label])=>(
-                  <button key={val} onClick={()=>setSortBy(val)} className={`text-xs px-3 py-1 rounded-full font-semibold border ${sortBy===val?"bg-blue-600 text-white border-blue-600":"bg-white text-gray-600 border-gray-300"}`}>{label}</button>
-                ))}
+              <div className="flex flex-wrap gap-2 mb-3">
+                <input className={`${inp} max-w-xs`} placeholder="🔍 Search..." value={search} onChange={e=>setSearch(e.target.value)}/>
+                <select className={`${inp} w-auto`} value={filterFwd} onChange={e=>setFilterFwd(e.target.value)}>
+                  <option value="">All Forwarders</option>
+                  {[...new Set(data.quotes.map(q=>q.forwarder))].map(f=><option key={f} value={f}>{f}</option>)}
+                </select>
+                <select className={`${inp} w-auto`} value={filterLine} onChange={e=>setFilterLine(e.target.value)}>
+                  <option value="">All Lines</option>
+                  {[...new Set(data.quotes.map(q=>q.line).filter(Boolean))].map(l=><option key={l} value={l}>{l}</option>)}
+                </select>
+                <div className="flex gap-1.5 ml-auto items-center">
+                  {[["grand","💰 Grand"],["total20","📦 20ft"],["total40","🏗 40HQ"],["etd","📅 ETD"]].map(([val,label])=>(
+                    <button key={val} onClick={()=>setSortBy(val)} className={`text-xs px-2.5 py-1.5 rounded-full font-semibold border ${sortBy===val?"bg-blue-600 text-white border-blue-600":(dark?"bg-slate-800 text-slate-300 border-slate-600":"bg-white text-gray-600 border-gray-300")}`}>{label}</button>
+                  ))}
+                </div>
               </div>
             )}
+
+            {/* Desktop Table */}
             {sorted.length>0?(
-              <div className="bg-white rounded-2xl shadow-md overflow-x-auto border">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-800 text-white text-xs uppercase">
-                      {["#","Date","Forwarder","Line","POL","POD"].map(h=><th key={h} className="px-3 py-3 text-left whitespace-nowrap">{h}</th>)}
-                      <th className="px-3 py-3 text-right bg-blue-900 whitespace-nowrap">Qty 20</th>
-                      <th className="px-3 py-3 text-right bg-blue-900 whitespace-nowrap">20 Rate</th>
-                      <th className="px-3 py-3 text-right bg-blue-900 whitespace-nowrap">20 THC</th>
-                      <th className="px-3 py-3 text-right bg-blue-800 whitespace-nowrap">Tot 20</th>
-                      <th className="px-3 py-3 text-right bg-purple-900 whitespace-nowrap">Qty 40HQ</th>
-                      <th className="px-3 py-3 text-right bg-purple-900 whitespace-nowrap">40HQ Rate</th>
-                      <th className="px-3 py-3 text-right bg-purple-900 whitespace-nowrap">40HQ THC</th>
-                      <th className="px-3 py-3 text-right bg-purple-800 whitespace-nowrap">Tot 40HQ</th>
-                      <th className="px-3 py-3 text-right whitespace-nowrap">Other</th>
-                      <th className="px-3 py-3 text-right bg-gray-600 whitespace-nowrap">Grand</th>
-                      {["CCY","ETD","Cutoff","Free","Transit","Validity","Remarks",""].map(h=><th key={h} className="px-3 py-3 text-left whitespace-nowrap">{h}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sorted.map((q,i)=>{
-                      const isB=q.id===bestGrandId,is20=q.id===best20Id&&q.total20>0,is40=q.id===best40Id&&q.total40>0;
-                      const bg=isB?"bg-green-50":i%2===0?"bg-white":"bg-gray-50";
-                      return(
-                        <tr key={q.id} className={`${bg} hover:bg-blue-50 border-b border-gray-100`}>
-                          <td className="px-3 py-2 font-bold text-gray-400">{i+1}</td>
-                          <td className="px-3 py-2 text-gray-500 whitespace-nowrap text-xs">{q.date||"—"}</td>
-                          <td className="px-3 py-2 font-semibold text-gray-800 whitespace-nowrap">
-                            {q.forwarder}{isB&&<span className="ml-1 text-xs bg-green-100 text-green-800 border border-green-300 px-1.5 py-0.5 rounded-full">BEST</span>}
-                          </td>
-                          <td className="px-3 py-2 text-gray-600">{q.line||"—"}</td>
-                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{q.pol||"—"}</td>
-                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{q.pod||"—"}</td>
-                          <td className="px-3 py-2 text-right bg-blue-50">{q.qty20||"—"}</td>
-                          <td className="px-3 py-2 text-right bg-blue-50 font-medium">{q.freight20?parseFloat(q.freight20).toLocaleString():"—"}</td>
-                          <td className="px-3 py-2 text-right bg-blue-50">{q.thc20?parseFloat(q.thc20).toLocaleString():"—"}</td>
-                          <td className={`px-3 py-2 text-right bg-blue-100 font-bold ${is20?"text-green-700":"text-blue-800"}`}>{q.total20>0?q.total20.toLocaleString():"—"}</td>
-                          <td className="px-3 py-2 text-right bg-purple-50">{q.qty40hq||"—"}</td>
-                          <td className="px-3 py-2 text-right bg-purple-50 font-medium">{q.freight40hq?parseFloat(q.freight40hq).toLocaleString():"—"}</td>
-                          <td className="px-3 py-2 text-right bg-purple-50">{q.thc40hq?parseFloat(q.thc40hq).toLocaleString():"—"}</td>
-                          <td className={`px-3 py-2 text-right bg-purple-100 font-bold ${is40?"text-green-700":"text-purple-800"}`}>{q.total40>0?q.total40.toLocaleString():"—"}</td>
-                          <td className="px-3 py-2 text-right">{q.otherCharges?parseFloat(q.otherCharges).toLocaleString():"—"}</td>
-                          <td className={`px-3 py-2 text-right bg-gray-100 font-bold text-lg ${isB?"text-green-700":"text-gray-800"}`}>{q.grand>0?q.grand.toLocaleString():"—"}</td>
-                          <td className="px-3 py-2 text-center text-gray-500">{q.currency}</td>
-                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{q.etd||"—"}</td>
-                          <td className="px-3 py-2 text-orange-600 font-medium whitespace-nowrap">{q.cutoff||"—"}</td>
-                          <td className="px-3 py-2 text-center">{q.freeDays?`${q.freeDays}d`:"—"}</td>
-                          <td className="px-3 py-2 text-center">{q.transitTime?`${q.transitTime}d`:"—"}</td>
-                          <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{q.validityDate||"—"}</td>
-                          <td className="px-3 py-2 text-gray-400 max-w-xs truncate">{q.remarks||"—"}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <button onClick={()=>editQuote(q)} className="text-blue-500 text-xs font-semibold mr-1">✏️</button>
-                            <button onClick={()=>persist({quotes:data.quotes.filter(x=>x.id!==q.id)})} className="text-red-400 text-xs font-semibold">🗑</button>
-                          </td>
+              <>
+                <div className={`rounded-2xl shadow-md border hidden md:block ${card}`}>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className={`text-xs uppercase tracking-wide ${thC}`}>
+                          {["#","Date","Forwarder","Line","POL","POD"].map(h=><th key={h} className="px-3 py-3 text-left whitespace-nowrap sticky top-0">{h}</th>)}
+                          <th className="px-3 py-3 text-right bg-blue-900 whitespace-nowrap">Qty20</th>
+                          <th className="px-3 py-3 text-right bg-blue-900 whitespace-nowrap">Rate20</th>
+                          <th className="px-3 py-3 text-right bg-blue-900 whitespace-nowrap">THC20</th>
+                          <th className="px-3 py-3 text-right bg-blue-800 whitespace-nowrap">Tot20</th>
+                          <th className="px-3 py-3 text-right bg-purple-900 whitespace-nowrap">Qty40</th>
+                          <th className="px-3 py-3 text-right bg-purple-900 whitespace-nowrap">Rate40</th>
+                          <th className="px-3 py-3 text-right bg-purple-900 whitespace-nowrap">THC40</th>
+                          <th className="px-3 py-3 text-right bg-purple-800 whitespace-nowrap">Tot40</th>
+                          <th className="px-3 py-3 text-right whitespace-nowrap">Other</th>
+                          <th className="px-3 py-3 text-right bg-gray-600 whitespace-nowrap">Grand</th>
+                          {["CCY","ETD","Cutoff","Free","Transit","Project",""].map(h=><th key={h} className="px-3 py-3 text-left whitespace-nowrap">{h}</th>)}
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                      </thead>
+                      <tbody>
+                        {sorted.map((q,i)=>{
+                          const isB=q.id===bestGrandId,is20=q.id===best20Id&&q.total20>0,is40=q.id===best40Id&&q.total40>0;
+                          const bg=isB?(dark?"bg-green-900":"bg-green-50"):i%2===0?(dark?"bg-slate-800":"bg-white"):(dark?"bg-slate-750":"bg-gray-50");
+                          const pr=data.projects.find(p=>String(p.id)===String(q.projectId));
+                          return(
+                            <tr key={q.id} className={`${bg} hover:opacity-80 border-b ${dark?"border-slate-700":"border-gray-100"} transition-opacity`}>
+                              <td className={`px-3 py-2 font-bold ${dark?"text-slate-500":"text-gray-400"}`}>{i+1}</td>
+                              <td className={`px-3 py-2 text-xs whitespace-nowrap ${dark?"text-slate-400":"text-gray-400"}`}>{q.date||"—"}</td>
+                              <td className="px-3 py-2 font-semibold whitespace-nowrap">
+                                {q.forwarder}
+                                {isB&&<span className="ml-1 text-xs bg-green-500 text-white px-1.5 py-0.5 rounded-full">BEST</span>}
+                              </td>
+                              <td className={`px-3 py-2 ${dark?"text-slate-300":"text-gray-600"}`}>{q.line||"—"}</td>
+                              <td className={`px-3 py-2 whitespace-nowrap ${dark?"text-slate-300":"text-gray-600"}`}>{q.pol||"—"}</td>
+                              <td className={`px-3 py-2 whitespace-nowrap ${dark?"text-slate-300":"text-gray-600"}`}>{q.pod||"—"}</td>
+                              <td className={`px-3 py-2 text-right ${dark?"bg-blue-900":"bg-blue-50"}`}>{q.qty20||"—"}</td>
+                              <td className={`px-3 py-2 text-right font-medium ${dark?"bg-blue-900":"bg-blue-50"}`}>{q.freight20?parseFloat(q.freight20).toLocaleString():"—"}</td>
+                              <td className={`px-3 py-2 text-right ${dark?"bg-blue-900 text-blue-300":"bg-blue-50 text-blue-600"}`}>{q.thc20?parseFloat(q.thc20).toLocaleString():"—"}</td>
+                              <td className={`px-3 py-2 text-right font-bold ${is20?"text-green-500":(dark?"bg-blue-800 text-blue-200":"bg-blue-100 text-blue-800")}`}>{q.total20>0?q.total20.toLocaleString():"—"}</td>
+                              <td className={`px-3 py-2 text-right ${dark?"bg-purple-900":"bg-purple-50"}`}>{q.qty40hq||"—"}</td>
+                              <td className={`px-3 py-2 text-right font-medium ${dark?"bg-purple-900":"bg-purple-50"}`}>{q.freight40hq?parseFloat(q.freight40hq).toLocaleString():"—"}</td>
+                              <td className={`px-3 py-2 text-right ${dark?"bg-purple-900 text-purple-300":"bg-purple-50 text-purple-600"}`}>{q.thc40hq?parseFloat(q.thc40hq).toLocaleString():"—"}</td>
+                              <td className={`px-3 py-2 text-right font-bold ${is40?"text-green-500":(dark?"bg-purple-800 text-purple-200":"bg-purple-100 text-purple-800")}`}>{q.total40>0?q.total40.toLocaleString():"—"}</td>
+                              <td className="px-3 py-2 text-right">{q.otherCharges?parseFloat(q.otherCharges).toLocaleString():"—"}</td>
+                              <td className={`px-3 py-2 text-right font-bold text-base ${isB?"text-green-500":(dark?"bg-slate-700":"bg-gray-100 text-gray-800")}`}>{q.grand>0?q.grand.toLocaleString():"—"}</td>
+                              <td className={`px-3 py-2 text-center ${dark?"text-slate-400":"text-gray-400"}`}>{q.currency}</td>
+                              <td className={`px-3 py-2 whitespace-nowrap ${dark?"text-slate-300":"text-gray-600"}`}>{q.etd||"—"}</td>
+                              <td className="px-3 py-2 text-orange-500 font-medium whitespace-nowrap">{q.cutoff||"—"}</td>
+                              <td className="px-3 py-2 text-center">{q.freeDays?`${q.freeDays}d`:"—"}</td>
+                              <td className="px-3 py-2 text-center">{q.transitTime?`${q.transitTime}d`:"—"}</td>
+                              <td className="px-3 py-2 text-xs">{pr?<span className="text-blue-400">📁 {pr.name}</span>:"—"}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                <button onClick={()=>editQuote(q)} className="text-blue-400 text-xs mr-1">✏️</button>
+                                <button onClick={()=>dupQuote(q)} className="text-gray-400 text-xs mr-1" title="Duplicate">⧉</button>
+                                <button onClick={()=>persist({quotes:data.quotes.filter(x=>x.id!==q.id)})} className="text-red-400 text-xs">🗑</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="md:hidden grid gap-3">
+                  {sorted.map((q,i)=>{
+                    const isB=q.id===bestGrandId;
+                    const pr=data.projects.find(p=>String(p.id)===String(q.projectId));
+                    return(
+                      <div key={q.id} className={`rounded-xl p-4 shadow-sm border ${card} ${isB?"border-green-500":""}`}>
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <span className="font-bold">{q.forwarder}</span>
+                            {isB&&<span className="ml-1 text-xs bg-green-500 text-white px-1.5 py-0.5 rounded-full">BEST</span>}
+                            <p className={`text-xs ${dark?"text-slate-400":"text-gray-400"}`}>{q.line||"—"} · {q.date||""}</p>
+                            {q.pol&&<p className={`text-xs ${dark?"text-slate-400":"text-gray-400"}`}>{q.pol} → {q.pod}</p>}
+                          </div>
+                          <div className="text-right">
+                            <div className="text-lg font-bold text-green-500">{q.grand>0?`${q.grand.toLocaleString()} ${q.currency}`:"—"}</div>
+                            <div className={`text-xs ${dark?"text-slate-400":"text-gray-400"}`}>Grand Total</div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                          <div className={`rounded-lg p-2 ${dark?"bg-blue-900":"bg-blue-50"}`}>
+                            <div className="text-blue-500 font-semibold">20ft</div>
+                            <div>Rate: <b>{q.freight20||"—"}</b></div>
+                            <div>THC: <b>{q.thc20||"—"}</b></div>
+                            <div>Qty: <b>{q.qty20||"—"}</b></div>
+                            <div className="font-bold text-blue-600">Tot: {q.total20>0?q.total20.toLocaleString():"—"}</div>
+                          </div>
+                          <div className={`rounded-lg p-2 ${dark?"bg-purple-900":"bg-purple-50"}`}>
+                            <div className="text-purple-500 font-semibold">40HQ</div>
+                            <div>Rate: <b>{q.freight40hq||"—"}</b></div>
+                            <div>THC: <b>{q.thc40hq||"—"}</b></div>
+                            <div>Qty: <b>{q.qty40hq||"—"}</b></div>
+                            <div className="font-bold text-purple-600">Tot: {q.total40>0?q.total40.toLocaleString():"—"}</div>
+                          </div>
+                        </div>
+                        <div className={`flex gap-3 text-xs mb-2 ${dark?"text-slate-400":"text-gray-500"}`}>
+                          {q.etd&&<span>ETD: {q.etd}</span>}
+                          {q.cutoff&&<span className="text-orange-500">Cut: {q.cutoff}</span>}
+                          {q.freeDays&&<span>{q.freeDays}d free</span>}
+                          {q.transitTime&&<span>{q.transitTime}d transit</span>}
+                          {pr&&<span className="text-blue-400">📁 {pr.name}</span>}
+                        </div>
+                        <div className="flex gap-2">
+                          <Btn color="ghost" size="xs" onClick={()=>editQuote(q)}>✏️ Edit</Btn>
+                          <Btn color="ghost" size="xs" onClick={()=>dupQuote(q)}>⧉ Dup</Btn>
+                          <Btn color="ghost" size="xs" onClick={()=>persist({quotes:data.quotes.filter(x=>x.id!==q.id)})}>🗑</Btn>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Summary */}
+                {sorted.length>1&&(
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                    {[
+                      {label:"Best Grand",val:Math.min(...sorted.filter(q=>q.grand>0).map(q=>q.grand)).toLocaleString(),color:"text-green-500",icon:"🏆"},
+                      {label:"Best 20ft",val:Math.min(...sorted.filter(q=>q.total20>0).map(q=>q.total20)).toLocaleString(),color:"text-blue-500",icon:"📦"},
+                      {label:"Best 40HQ",val:Math.min(...sorted.filter(q=>q.total40>0).map(q=>q.total40)).toLocaleString(),color:"text-purple-500",icon:"🏗️"},
+                      {label:"Avg Grand",val:Math.round(sorted.filter(q=>q.grand>0).reduce((s,q)=>s+q.grand,0)/Math.max(sorted.filter(q=>q.grand>0).length,1)).toLocaleString(),color:dark?"text-slate-300":"text-gray-600",icon:"📊"},
+                    ].map(({label,val,color,icon})=>(
+                      <div key={label} className={`rounded-xl shadow border p-4 text-center ${card}`}>
+                        <div className="text-xl mb-1">{icon}</div>
+                        <div className={`text-xl font-bold ${color}`}>{val}</div>
+                        <div className={`text-xs mt-1 ${dark?"text-slate-400":"text-gray-400"}`}>{label}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             ):(
-              <div className="text-center py-20 text-gray-400 bg-white rounded-2xl border">
+              <div className={`text-center py-20 rounded-2xl border ${card}`}>
                 <div className="text-5xl mb-3">🚢</div>
                 <p className="text-lg font-semibold">No quotes yet</p>
-                <p className="text-sm">Click ＋ New Draft to get started</p>
-              </div>
-            )}
-            {sorted.length>1&&(
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                {[
-                  {label:"Best Grand",val:Math.min(...sorted.filter(q=>q.grand>0).map(q=>q.grand)).toLocaleString(),color:"text-green-700",icon:"🏆"},
-                  {label:"Best 20ft",val:Math.min(...sorted.filter(q=>q.total20>0).map(q=>q.total20)).toLocaleString(),color:"text-blue-700",icon:"📦"},
-                  {label:"Best 40HQ",val:Math.min(...sorted.filter(q=>q.total40>0).map(q=>q.total40)).toLocaleString(),color:"text-purple-700",icon:"🏗️"},
-                  {label:"Avg Grand",val:Math.round(sorted.filter(q=>q.grand>0).reduce((s,q)=>s+q.grand,0)/Math.max(sorted.filter(q=>q.grand>0).length,1)).toLocaleString(),color:"text-gray-600",icon:"📊"},
-                ].map(({label,val,color,icon})=>(
-                  <div key={label} className="bg-white rounded-xl shadow border p-4 text-center">
-                    <div className="text-xl mb-1">{icon}</div>
-                    <div className={`text-xl font-bold ${color}`}>{val}</div>
-                    <div className="text-xs text-gray-400 mt-1">{label}</div>
-                  </div>
-                ))}
+                <p className={`text-sm ${dark?"text-slate-400":"text-gray-400"}`}>Click ＋ New to get started</p>
               </div>
             )}
           </>
         )}
       </div>
     </div>
+    </DarkCtx.Provider>
   );
 }
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
