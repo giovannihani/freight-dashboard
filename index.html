@@ -1,198 +1,167 @@
-import { useState, useEffect } from "react";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>🚢 Freight Rate Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+<div id="root"></div>
+<script type="text/babel">
 
 const STORAGE_KEY = "freight-rates-v5";
 const emptyForm = {
-  forwarder: "", line: "", pol: "", pod: "",
-  freight20: "", freight40hq: "",
-  thc20: "", thc40hq: "",
-  qty20: "", qty40hq: "",
-  otherCharges: "", currency: "USD",
-  etd: "", cutoff: "", validityDate: "",
-  freeDays: "", transitTime: "", remarks: ""
+  forwarder:"",line:"",pol:"",pod:"",
+  freight20:"",freight40hq:"",thc20:"",thc40hq:"",
+  qty20:"",qty40hq:"",otherCharges:"",currency:"USD",
+  etd:"",cutoff:"",validityDate:"",freeDays:"",transitTime:"",remarks:""
 };
-const currencies = ["USD", "EGP", "EUR", "CNY"];
+const currencies = ["USD","EGP","EUR","CNY"];
 
-function calcTotal(r, type = "20") {
-  const f = parseFloat(type === "20" ? r.freight20 : r.freight40hq) || 0;
-  const t = parseFloat(type === "20" ? r.thc20 : r.thc40hq) || 0;
-  const o = parseFloat(r.otherCharges) || 0;
-  const q20 = parseInt(r.qty20) || 1;
-  const q40 = parseInt(r.qty40hq) || 1;
-  if (type === "20") return (f + t) * q20 + o;
-  return (f + t) * q40 + o;
+function calcTotal(r,type="20"){
+  const f=parseFloat(type==="20"?r.freight20:r.freight40hq)||0;
+  const t=parseFloat(type==="20"?r.thc20:r.thc40hq)||0;
+  const o=parseFloat(r.otherCharges)||0;
+  const q20=parseInt(r.qty20)||1;
+  const q40=parseInt(r.qty40hq)||1;
+  return type==="20"?(f+t)*q20+o:(f+t)*q40+o;
 }
-
-function calcGrand(r) {
-  const f20 = parseFloat(r.freight20) || 0;
-  const t20 = parseFloat(r.thc20) || 0;
-  const f40 = parseFloat(r.freight40hq) || 0;
-  const t40 = parseFloat(r.thc40hq) || 0;
-  const q20 = parseInt(r.qty20) || 0;
-  const q40 = parseInt(r.qty40hq) || 0;
-  const o = parseFloat(r.otherCharges) || 0;
-  return (f20 + t20) * q20 + (f40 + t40) * q40 + o;
+function calcGrand(r){
+  const f20=parseFloat(r.freight20)||0,t20=parseFloat(r.thc20)||0;
+  const f40=parseFloat(r.freight40hq)||0,t40=parseFloat(r.thc40hq)||0;
+  const q20=parseInt(r.qty20)||0,q40=parseInt(r.qty40hq)||0;
+  const o=parseFloat(r.otherCharges)||0;
+  return (f20+t20)*q20+(f40+t40)*q40+o;
 }
-
-function Badge({ label, color }) {
-  const c = { green: "bg-green-100 text-green-800 border border-green-300", purple: "bg-purple-100 text-purple-800 border border-purple-300" };
-  return <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${c[color]}`}>{label}</span>;
-}
-
-function Field({ label, labelColor = "text-gray-500", children }) {
+function Field({label,labelColor="text-gray-500",children}){
   return <div><label className={`text-xs font-medium ${labelColor}`}>{label}</label>{children}</div>;
 }
 
-export default function App() {
-  const [quotes, setQuotes] = useState([]);
-  const [drafts, setDrafts] = useState([]);
-  const [form, setForm] = useState({ ...emptyForm });
-  const [editId, setEditId] = useState(null);
-  const [editDraftId, setEditDraftId] = useState(null);
-  const [tab, setTab] = useState("dashboard");
-  const [pasteText, setPasteText] = useState("");
-  const [parsing, setParsing] = useState(false);
-  const [parseError, setParseError] = useState("");
-  const [parsed, setParsed] = useState(null);
-  const [pasteOpen, setPasteOpen] = useState(false);
-  const [sortBy, setSortBy] = useState("grand");
-  const [formMode, setFormMode] = useState(null);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
+function App(){
+  const [quotes,setQuotes]=React.useState([]);
+  const [drafts,setDrafts]=React.useState([]);
+  const [form,setForm]=React.useState({...emptyForm});
+  const [editId,setEditId]=React.useState(null);
+  const [editDraftId,setEditDraftId]=React.useState(null);
+  const [tab,setTab]=React.useState("dashboard");
+  const [pasteText,setPasteText]=React.useState("");
+  const [parsing,setParsing]=React.useState(false);
+  const [parseError,setParseError]=React.useState("");
+  const [parsed,setParsed]=React.useState(null);
+  const [pasteOpen,setPasteOpen]=React.useState(false);
+  const [sortBy,setSortBy]=React.useState("grand");
+  const [formMode,setFormMode]=React.useState(null);
+  const [dropdownOpen,setDropdownOpen]=React.useState(false);
+  const [apiKey,setApiKey]=React.useState(()=>localStorage.getItem("ai_api_key")||"");
+  const [showKeyInput,setShowKeyInput]=React.useState(false);
 
-  useEffect(() => {
-    try {
-      const s = localStorage.getItem(STORAGE_KEY);
-      if (s) { const d = JSON.parse(s); setQuotes(d.quotes || []); setDrafts(d.drafts || []); }
-    } catch {}
-  }, []);
+  React.useEffect(()=>{
+    try{const s=localStorage.getItem(STORAGE_KEY);if(s){const d=JSON.parse(s);setQuotes(d.quotes||[]);setDrafts(d.drafts||[]);}}catch{}
+  },[]);
 
-  const persist = (q, dr) => {
-    const nq = q ?? quotes, nd = dr ?? drafts;
-    setQuotes(nq); setDrafts(nd);
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ quotes: nq, drafts: nd })); } catch {}
+  const persist=(q,dr)=>{
+    const nq=q??quotes,nd=dr??drafts;
+    setQuotes(nq);setDrafts(nd);
+    try{localStorage.setItem(STORAGE_KEY,JSON.stringify({quotes:nq,drafts:nd}));}catch{}
   };
 
-  const upd = (k, v) => setForm(p => ({ ...p, [k]: v }));
-  const inp = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
+  const upd=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const inp="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
+  const resetForm=()=>{setForm({...emptyForm});setEditId(null);setEditDraftId(null);setFormMode(null);};
 
-  const resetForm = () => { setForm({ ...emptyForm }); setEditId(null); setEditDraftId(null); setFormMode(null); };
+  const enrichQuote=(f)=>({...f,id:editId||Date.now(),total20:calcTotal(f,"20"),total40:calcTotal(f,"40"),grand:calcGrand(f)});
 
-  const enrichQuote = (f) => ({
-    ...f,
-    id: editId || Date.now(),
-    total20: calcTotal(f, "20"),
-    total40: calcTotal(f, "40"),
-    grand: calcGrand(f)
-  });
-
-  const handleSaveQuote = () => {
-    if (!form.forwarder.trim()) { alert("Forwarder name is required."); return; }
-    const rec = enrichQuote(form);
-    const updated = editId ? quotes.map(q => q.id === editId ? rec : q) : [...quotes, rec];
-    persist(updated, null);
-    resetForm();
-    setTab("dashboard");
+  const handleSaveQuote=()=>{
+    if(!form.forwarder.trim()){alert("Forwarder name is required.");return;}
+    const rec=enrichQuote(form);
+    persist(editId?quotes.map(q=>q.id===editId?rec:q):[...quotes,rec],null);
+    resetForm();setTab("dashboard");
   };
-
-  const handleSaveDraft = () => {
-    if (!form.forwarder.trim() && !form.line.trim()) { alert("Enter at least a forwarder or line name."); return; }
-    const rec = { ...enrichQuote(form), id: editDraftId || Date.now() };
-    const updated = editDraftId ? drafts.map(d => d.id === editDraftId ? rec : d) : [...drafts, rec];
-    persist(null, updated);
-    resetForm();
-    setTab("drafts");
+  const handleSaveDraft=()=>{
+    if(!form.forwarder.trim()&&!form.line.trim()){alert("Enter at least a forwarder or line name.");return;}
+    const rec={...enrichQuote(form),id:editDraftId||Date.now()};
+    persist(null,editDraftId?drafts.map(d=>d.id===editDraftId?rec:d):[...drafts,rec]);
+    resetForm();setTab("drafts");
   };
-
-  const handlePromoteDraft = (d) => {
-    const rec = { ...d, id: Date.now(), total20: calcTotal(d,"20"), total40: calcTotal(d,"40"), grand: calcGrand(d) };
-    persist([...quotes, rec], drafts.filter(x => x.id !== d.id));
-    setTab("dashboard");
+  const handlePromoteDraft=(d)=>{
+    const rec={...d,id:Date.now(),total20:calcTotal(d,"20"),total40:calcTotal(d,"40"),grand:calcGrand(d)};
+    persist([...quotes,rec],drafts.filter(x=>x.id!==d.id));setTab("dashboard");
   };
+  const handleEditQuote=(q)=>{setForm({...emptyForm,...q});setEditId(q.id);setFormMode("quote");setTab("dashboard");};
+  const handleEditDraft=(d)=>{setForm({...emptyForm,...d});setEditDraftId(d.id);setFormMode("draft");setTab("drafts");};
+  const handleDeleteQuote=(id)=>persist(quotes.filter(q=>q.id!==id),null);
+  const handleDeleteDraft=(id)=>persist(null,drafts.filter(d=>d.id!==id));
 
-  const handleEditQuote = (q) => { setForm({ ...emptyForm, ...q }); setEditId(q.id); setFormMode("quote"); setTab("dashboard"); };
-  const handleEditDraft = (d) => { setForm({ ...emptyForm, ...d }); setEditDraftId(d.id); setFormMode("draft"); setTab("drafts"); };
-  const handleDeleteQuote = (id) => persist(quotes.filter(q => q.id !== id), null);
-  const handleDeleteDraft = (id) => persist(null, drafts.filter(d => d.id !== id));
+  const sorted=[...quotes]
+    .map(q=>({...q,total20:calcTotal(q,"20"),total40:calcTotal(q,"40"),grand:calcGrand(q)}))
+    .sort((a,b)=>sortBy==="grand"?a.grand-b.grand:sortBy==="total20"?a.total20-b.total20:sortBy==="total40"?a.total40-b.total40:sortBy==="etd"?(a.etd||"").localeCompare(b.etd||""):(a.transitTime||0)-(b.transitTime||0));
 
-  const sorted = [...quotes]
-    .map(q => ({ ...q, total20: calcTotal(q,"20"), total40: calcTotal(q,"40"), grand: calcGrand(q) }))
-    .sort((a,b) =>
-      sortBy === "grand" ? a.grand - b.grand :
-      sortBy === "total20" ? a.total20 - b.total20 :
-      sortBy === "total40" ? a.total40 - b.total40 :
-      sortBy === "etd" ? (a.etd||"").localeCompare(b.etd||"") :
-      (a.transitTime||0) - (b.transitTime||0)
-    );
+  const bestGrandId=sorted.filter(q=>q.grand>0).sort((a,b)=>a.grand-b.grand)[0]?.id;
+  const best20Id=sorted.filter(q=>q.total20>0).sort((a,b)=>a.total20-b.total20)[0]?.id;
+  const best40Id=sorted.filter(q=>q.total40>0).sort((a,b)=>a.total40-b.total40)[0]?.id;
 
-  const bestGrandId = sorted.filter(q=>q.grand>0).sort((a,b)=>a.grand-b.grand)[0]?.id;
-  const best20Id = sorted.filter(q=>q.total20>0).sort((a,b)=>a.total20-b.total20)[0]?.id;
-  const best40Id = sorted.filter(q=>q.total40>0).sort((a,b)=>a.total40-b.total40)[0]?.id;
-
-  const handleParse = async () => {
-    if (!pasteText.trim()) return;
-    setParsing(true); setParseError(""); setParsed(null);
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": process.env.REACT_APP_ANTHROPIC_KEY, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({
-          model: "claude-opus-4-5", max_tokens: 1000,
-          messages: [{ role: "user", content: `Extract freight quote data from the text and return ONLY a JSON array. Keys: forwarder, line, pol, pod, freight20, freight40hq, thc20, thc40hq, qty20, qty40hq, otherCharges, currency (default USD), etd (YYYY-MM-DD), cutoff (YYYY-MM-DD), validityDate (YYYY-MM-DD), freeDays, transitTime, remarks. Empty string if not found. Raw JSON only.\n\n${pasteText}` }]
-        })
+  const handleParse=async()=>{
+    if(!pasteText.trim())return;
+    if(!apiKey){setShowKeyInput(true);return;}
+    setParsing(true);setParseError("");setParsed(null);
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:1000,
+          messages:[{role:"user",content:`Extract freight quote data from the text and return ONLY a JSON array. Keys: forwarder, line, pol, pod, freight20, freight40hq, thc20, thc40hq, qty20, qty40hq, otherCharges, currency (default USD), etd (YYYY-MM-DD), cutoff (YYYY-MM-DD), validityDate (YYYY-MM-DD), freeDays, transitTime, remarks. Empty string if not found. Raw JSON only.\n\n${pasteText}`}]})
       });
-      const data = await res.json();
-      const text = data.content?.map(b => b.text||"").join("") || "";
-      const arr = JSON.parse(text.replace(/```json|```/g,"").trim());
-      if (!Array.isArray(arr)) throw new Error();
-      setParsed(arr.map(q => ({ ...emptyForm, ...q, id: Date.now()+Math.random(), total20: calcTotal(q,"20"), total40: calcTotal(q,"40"), grand: calcGrand(q) })));
-    } catch { setParseError("Could not parse. Check your input and try again."); }
+      const data=await res.json();
+      const text=data.content?.map(b=>b.text||"").join("")||"";
+      const arr=JSON.parse(text.replace(/```json|```/g,"").trim());
+      if(!Array.isArray(arr))throw new Error();
+      setParsed(arr.map(q=>({...emptyForm,...q,id:Date.now()+Math.random(),total20:calcTotal(q,"20"),total40:calcTotal(q,"40"),grand:calcGrand(q)})));
+    }catch{setParseError("Could not parse. Check your input or API key.");}
     setParsing(false);
   };
 
-  const handleConfirmParsed = (asDraft=false) => {
-    if (!parsed) return;
-    if (asDraft) persist(null, [...drafts, ...parsed]);
-    else persist([...quotes, ...parsed], null);
-    setParsed(null); setPasteText(""); setPasteOpen(false);
+  const handleConfirmParsed=(asDraft=false)=>{
+    if(!parsed)return;
+    if(asDraft)persist(null,[...drafts,...parsed]);
+    else persist([...quotes,...parsed],null);
+    setParsed(null);setPasteText("");setPasteOpen(false);
   };
 
-  const handleExportCSV = () => {
-    if (!sorted.length) return;
-    const cols = ["#","Forwarder","Line","POL","POD","Qty 20","20 Rate","20 THC","Total 20","Qty 40HQ","40HQ Rate","40HQ THC","Total 40HQ","Other","Grand Total","CCY","ETD","Cutoff","Free Days","Transit","Validity","Remarks"];
-    const rows = sorted.map((q,i) => [i+1,q.forwarder,q.line||"",q.pol||"",q.pod||"",q.qty20||"",q.freight20||"",q.thc20||"",q.total20||"",q.qty40hq||"",q.freight40hq||"",q.thc40hq||"",q.total40||"",q.otherCharges||"",q.grand||"",q.currency,q.etd||"",q.cutoff||"",q.freeDays||"",q.transitTime||"",q.validityDate||"",q.remarks||""]);
-    const csv = [cols,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv],{type:"text/csv"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href=url; a.download="freight_rates.csv"; a.click();
+  const handleExportCSV=()=>{
+    if(!sorted.length)return;
+    const cols=["#","Forwarder","Line","POL","POD","Qty 20","20 Rate","20 THC","Total 20","Qty 40HQ","40HQ Rate","40HQ THC","Total 40HQ","Other","Grand Total","CCY","ETD","Cutoff","Free Days","Transit","Validity","Remarks"];
+    const rows=sorted.map((q,i)=>[i+1,q.forwarder,q.line||"",q.pol||"",q.pod||"",q.qty20||"",q.freight20||"",q.thc20||"",q.total20||"",q.qty40hq||"",q.freight40hq||"",q.thc40hq||"",q.total40||"",q.otherCharges||"",q.grand||"",q.currency,q.etd||"",q.cutoff||"",q.freeDays||"",q.transitTime||"",q.validityDate||"",q.remarks||""]);
+    const csv=[cols,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob=new Blob([csv],{type:"text/csv"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download="freight_rates.csv";a.click();
     URL.revokeObjectURL(url);
   };
 
-  const handleExportHTML = () => {
-    if (!sorted.length) return;
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Freight Rate Comparison</title>
-<style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h2{color:#1e3a5f}table{border-collapse:collapse;width:100%}th{background:#1e3a5f;color:white;padding:6px 8px;text-align:left;white-space:nowrap}td{padding:5px 8px;border-bottom:1px solid #eee}.best{background:#f0fdf4;font-weight:bold;color:#15803d}.b20{background:#eff6ff}.b40{background:#f5f3ff}.tot{font-weight:bold}</style>
-</head><body><h2>🚢 Freight Rate Comparison</h2><p>Generated: ${new Date().toLocaleString()}</p>
-<table><thead><tr>${["#","Forwarder","Line","POL","POD","Qty 20","20 Rate","20 THC","Total 20","Qty 40HQ","40HQ Rate","40HQ THC","Total 40HQ","Other","Grand Total","CCY","ETD","Cutoff","Free Days","Transit (d)","Validity","Remarks"].map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>
-${sorted.map((q,i)=>{const isB=q.id===bestGrandId;return`<tr class="${isB?"best":""}"><td>${i+1}</td><td><b>${q.forwarder}</b>${isB?' ⭐':''}</td><td>${q.line||"—"}</td><td>${q.pol||"—"}</td><td>${q.pod||"—"}</td><td class="b20">${q.qty20||"—"}</td><td class="b20">${q.freight20||"—"}</td><td class="b20">${q.thc20||"—"}</td><td class="b20 tot">${q.total20||"—"}</td><td class="b40">${q.qty40hq||"—"}</td><td class="b40">${q.freight40hq||"—"}</td><td class="b40">${q.thc40hq||"—"}</td><td class="b40 tot">${q.total40||"—"}</td><td>${q.otherCharges||"—"}</td><td class="tot">${q.grand||"—"}</td><td>${q.currency}</td><td>${q.etd||"—"}</td><td style="color:#ea580c">${q.cutoff||"—"}</td><td>${q.freeDays||"—"}</td><td>${q.transitTime||"—"}</td><td>${q.validityDate||"—"}</td><td>${q.remarks||"—"}</td></tr>`;}).join("")}
-</tbody></table></body></html>`;
-    const blob = new Blob([html],{type:"text/html"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href=url; a.download="freight_rates.html"; a.click();
+  const handleExportHTML=()=>{
+    if(!sorted.length)return;
+    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Freight Rates</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}table{border-collapse:collapse;width:100%}th{background:#1e3a5f;color:white;padding:6px 8px;text-align:left;white-space:nowrap}td{padding:5px 8px;border-bottom:1px solid #eee}.best{background:#f0fdf4;font-weight:bold}.b20{background:#eff6ff}.b40{background:#f5f3ff}.tot{font-weight:bold}</style></head><body><h2>🚢 Freight Rate Comparison</h2><p>${new Date().toLocaleString()}</p><table><thead><tr>${["#","Forwarder","Line","POL","POD","Qty20","20Rate","20THC","Tot20","Qty40","40Rate","40THC","Tot40","Other","Grand","CCY","ETD","Cutoff","Free","Transit","Validity","Remarks"].map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${sorted.map((q,i)=>{const isB=q.id===bestGrandId;return`<tr class="${isB?"best":""}"><td>${i+1}</td><td><b>${q.forwarder}</b>${isB?" ⭐":""}</td><td>${q.line||"—"}</td><td>${q.pol||"—"}</td><td>${q.pod||"—"}</td><td class="b20">${q.qty20||"—"}</td><td class="b20">${q.freight20||"—"}</td><td class="b20">${q.thc20||"—"}</td><td class="b20 tot">${q.total20||"—"}</td><td class="b40">${q.qty40hq||"—"}</td><td class="b40">${q.freight40hq||"—"}</td><td class="b40">${q.thc40hq||"—"}</td><td class="b40 tot">${q.total40||"—"}</td><td>${q.otherCharges||"—"}</td><td class="tot">${q.grand||"—"}</td><td>${q.currency}</td><td>${q.etd||"—"}</td><td style="color:#ea580c">${q.cutoff||"—"}</td><td>${q.freeDays||"—"}</td><td>${q.transitTime||"—"}</td><td>${q.validityDate||"—"}</td><td>${q.remarks||"—"}</td></tr>`;}).join("")}</tbody></table></body></html>`;
+    const blob=new Blob([html],{type:"text/html"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download="freight_rates.html";a.click();
     URL.revokeObjectURL(url);
   };
 
-  const FormPanel = ({ mode }) => (
+  const FormPanel=({mode})=>(
     <div className={`bg-white rounded-2xl shadow-md p-5 mb-5 border ${mode==="draft"?"border-yellow-200":"border-blue-100"}`}>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-bold text-gray-700">
-          {mode==="draft"?(editDraftId?"✏️ Edit Draft":"📝 New Draft"):(editId?"✏️ Edit Quote":"➕ New Quote")}
-        </h2>
+        <h2 className="text-base font-bold text-gray-700">{mode==="draft"?(editDraftId?"✏️ Edit Draft":"📝 New Draft"):(editId?"✏️ Edit Quote":"➕ New Quote")}</h2>
         <button onClick={resetForm} className="text-gray-400 hover:text-red-500 text-lg font-bold">✕</button>
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <div className="col-span-2"><Field label="Forwarder Name *"><input className={inp} value={form.forwarder} onChange={e=>upd("forwarder",e.target.value)} placeholder="e.g. Transmar"/></Field></div>
         <div className="col-span-2"><Field label="Shipping Line"><input className={inp} value={form.line} onChange={e=>upd("line",e.target.value)} placeholder="e.g. MSC"/></Field></div>
-        <div className="col-span-2 md:col-span-1"><Field label="POL"><input className={inp} value={form.pol} onChange={e=>upd("pol",e.target.value)} placeholder="e.g. Shanghai"/></Field></div>
-        <div className="col-span-2 md:col-span-1"><Field label="POD"><input className={inp} value={form.pod} onChange={e=>upd("pod",e.target.value)} placeholder="e.g. Alexandria"/></Field></div>
+        <div className="col-span-1"><Field label="POL"><input className={inp} value={form.pol} onChange={e=>upd("pol",e.target.value)} placeholder="e.g. Shanghai"/></Field></div>
+        <div className="col-span-1"><Field label="POD"><input className={inp} value={form.pod} onChange={e=>upd("pod",e.target.value)} placeholder="e.g. Alexandria"/></Field></div>
         <Field label="Qty 20ft" labelColor="text-blue-600 font-bold"><input type="number" className={inp} value={form.qty20} onChange={e=>upd("qty20",e.target.value)} placeholder="0"/></Field>
         <Field label="20ft Freight Rate" labelColor="text-blue-600 font-bold"><input type="number" className={inp} value={form.freight20} onChange={e=>upd("freight20",e.target.value)} placeholder="0"/></Field>
         <Field label="20ft THC" labelColor="text-blue-600 font-bold"><input type="number" className={inp} value={form.thc20} onChange={e=>upd("thc20",e.target.value)} placeholder="0"/></Field>
@@ -242,6 +211,23 @@ ${sorted.map((q,i)=>{const isB=q.id===bestGrandId;return`<tr class="${isB?"best"
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-7xl mx-auto">
 
+        {/* API Key modal */}
+        {showKeyInput&&(
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl p-6 shadow-xl w-96">
+              <h2 className="text-base font-bold text-gray-800 mb-2">🔑 Enter Anthropic API Key</h2>
+              <p className="text-xs text-gray-500 mb-3">Required for AI Parser. Key is saved in your browser only.</p>
+              <input className={inp} type="password" placeholder="sk-ant-..." value={apiKey}
+                onChange={e=>setApiKey(e.target.value)}/>
+              <div className="flex gap-2 mt-3">
+                <button onClick={()=>{localStorage.setItem("ai_api_key",apiKey);setShowKeyInput(false);handleParse();}}
+                  className="bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-lg flex-1">Save & Parse</button>
+                <button onClick={()=>setShowKeyInput(false)} className="bg-gray-200 text-gray-700 text-sm font-semibold px-4 py-2 rounded-lg">Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
@@ -249,30 +235,23 @@ ${sorted.map((q,i)=>{const isB=q.id===bestGrandId;return`<tr class="${isB?"best"
             <p className="text-sm text-gray-500">{quotes.length} quote{quotes.length!==1?"s":""} · {drafts.length} draft{drafts.length!==1?"s":""}</p>
           </div>
           <div className="flex gap-2 flex-wrap items-center">
-
-            {/* Dropdown New button */}
             <div className="relative">
               <button onClick={()=>setDropdownOpen(p=>!p)}
                 className="text-sm font-semibold px-4 py-2 rounded-lg bg-blue-600 text-white flex items-center gap-1 hover:bg-blue-700">
                 ＋ New <span className="text-blue-200 text-xs">▾</span>
               </button>
-              {dropdownOpen && (
+              {dropdownOpen&&(
                 <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
                   <button onClick={()=>{setTab("dashboard");setFormMode("quote");resetForm();setDropdownOpen(false);}}
-                    className="w-full text-left px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-blue-50 border-b border-gray-100 flex items-center gap-2">
-                    ✅ New Quote
-                  </button>
+                    className="w-full text-left px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-blue-50 border-b border-gray-100">✅ New Quote</button>
                   <button onClick={()=>{setTab("drafts");setFormMode("draft");resetForm();setDropdownOpen(false);}}
-                    className="w-full text-left px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-yellow-50 flex items-center gap-2">
-                    📝 New Draft
-                  </button>
+                    className="w-full text-left px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-yellow-50">📝 New Draft</button>
                 </div>
               )}
             </div>
-
             <button onClick={()=>{setPasteOpen(p=>!p);setTab("dashboard");}}
               className={`text-sm font-semibold px-4 py-2 rounded-lg border ${pasteOpen?"bg-purple-700 text-white border-purple-700":"bg-white text-purple-700 border-purple-400"}`}>
-              🤖 {pasteOpen?"Hide Parser":"AI Parser"}
+              🤖 {pasteOpen?"Hide":"AI Parser"}
             </button>
             <button onClick={()=>setTab(tab==="drafts"?"dashboard":"drafts")}
               className={`text-sm font-semibold px-4 py-2 rounded-lg border ${tab==="drafts"?"bg-gray-700 text-white border-gray-700":"bg-white text-gray-600 border-gray-300"}`}>
@@ -295,20 +274,23 @@ ${sorted.map((q,i)=>{const isB=q.id===bestGrandId;return`<tr class="${isB?"best"
               <button onClick={()=>{setPasteOpen(false);setParsed(null);setPasteText("");}} className="text-gray-400 hover:text-red-500 text-lg font-bold">✕</button>
             </div>
             <p className="text-xs text-gray-400 mb-3">Paste any email, WhatsApp, or rate sheet — Claude extracts all fields automatically.</p>
-            <textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm h-32 focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none"
-              placeholder={"Transmar — MSC, ETD 15 May, cutoff 10 May, 2x20ft $650 THC $110, 1x40HQ $950 THC $180, 14 free days, 28d transit, valid 30 May."}
+            <textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm h-28 focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none"
+              placeholder="Transmar — MSC, ETD 15 May, cutoff 10 May, 2x20ft $650 THC $110, 1x40HQ $950 THC $180, 14 free days, 28d transit."
               value={pasteText} onChange={e=>{setPasteText(e.target.value);setParsed(null);setParseError("");}}/>
             {parseError&&<p className="text-red-500 text-xs mt-1">{parseError}</p>}
-            <button onClick={handleParse} disabled={parsing||!pasteText.trim()} className="mt-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white text-sm font-semibold px-5 py-2 rounded-lg">
-              {parsing?"Parsing...":"Parse →"}
-            </button>
+            <div className="flex gap-2 mt-2">
+              <button onClick={handleParse} disabled={parsing||!pasteText.trim()} className="bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white text-sm font-semibold px-5 py-2 rounded-lg">
+                {parsing?"Parsing...":"Parse →"}
+              </button>
+              <button onClick={()=>setShowKeyInput(true)} className="text-xs text-gray-400 hover:text-gray-600 underline px-2">🔑 API Key</button>
+            </div>
             {parsed&&(
               <div className="mt-4">
                 <p className="text-sm font-bold text-gray-700 mb-2">✅ {parsed.length} quote{parsed.length!==1?"s":""} found</p>
-                <div className="overflow-x-auto rounded-xl border border-gray-200 mb-3">
-                  <table className="w-full text-xs">
+                <div className="overflow-x-auto rounded-xl border border-gray-200 mb-3 text-xs">
+                  <table className="w-full">
                     <thead className="bg-gray-100 text-gray-600 uppercase">
-                      <tr>{["Forwarder","Line","POL","POD","Qty20","20Rate","20THC","Tot20","Qty40","40Rate","40THC","Tot40","Other","Grand","CCY","ETD","Cutoff","Free","Transit","Validity","Remarks"].map(h=>(
+                      <tr>{["Forwarder","Line","POL","POD","Q20","20Rate","20THC","Tot20","Q40","40Rate","40THC","Tot40","Grand","CCY","ETD","Cutoff"].map(h=>(
                         <th key={h} className="px-2 py-1.5 text-left whitespace-nowrap">{h}</th>
                       ))}</tr>
                     </thead>
@@ -327,15 +309,10 @@ ${sorted.map((q,i)=>{const isB=q.id===bestGrandId;return`<tr class="${isB?"best"
                           <td className="px-2 py-1.5">{q.freight40hq||"—"}</td>
                           <td className="px-2 py-1.5">{q.thc40hq||"—"}</td>
                           <td className="px-2 py-1.5 font-bold text-purple-700">{q.total40?.toLocaleString()||"—"}</td>
-                          <td className="px-2 py-1.5">{q.otherCharges||"—"}</td>
                           <td className="px-2 py-1.5 font-bold">{q.grand?.toLocaleString()||"—"}</td>
                           <td className="px-2 py-1.5">{q.currency}</td>
                           <td className="px-2 py-1.5">{q.etd||"—"}</td>
                           <td className="px-2 py-1.5">{q.cutoff||"—"}</td>
-                          <td className="px-2 py-1.5">{q.freeDays?`${q.freeDays}d`:"—"}</td>
-                          <td className="px-2 py-1.5">{q.transitTime?`${q.transitTime}d`:"—"}</td>
-                          <td className="px-2 py-1.5">{q.validityDate||"—"}</td>
-                          <td className="px-2 py-1.5 max-w-xs truncate">{q.remarks||"—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -344,7 +321,7 @@ ${sorted.map((q,i)=>{const isB=q.id===bestGrandId;return`<tr class="${isB?"best"
                 <div className="flex gap-2">
                   <button onClick={()=>handleConfirmParsed(false)} className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">✅ Add as Quotes</button>
                   <button onClick={()=>handleConfirmParsed(true)} className="bg-yellow-400 hover:bg-yellow-500 text-white text-sm font-semibold px-4 py-2 rounded-lg">💾 Save as Drafts</button>
-                  <button onClick={()=>setParsed(null)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold px-4 py-2 rounded-lg">✕ Discard</button>
+                  <button onClick={()=>setParsed(null)} className="bg-gray-200 text-gray-700 text-sm font-semibold px-4 py-2 rounded-lg">✕</button>
                 </div>
               </div>
             )}
@@ -403,7 +380,6 @@ ${sorted.map((q,i)=>{const isB=q.id===bestGrandId;return`<tr class="${isB?"best"
                 ))}
               </div>
             )}
-
             {sorted.length>0?(
               <div className="bg-white rounded-2xl shadow-md overflow-x-auto border border-gray-100">
                 <table className="w-full text-sm">
@@ -439,11 +415,11 @@ ${sorted.map((q,i)=>{const isB=q.id===bestGrandId;return`<tr class="${isB?"best"
                           <td className="px-3 py-2 text-gray-600">{q.line||"—"}</td>
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{q.pol||"—"}</td>
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{q.pod||"—"}</td>
-                          <td className="px-3 py-2 text-right bg-blue-50 text-gray-600">{q.qty20||"—"}</td>
+                          <td className="px-3 py-2 text-right bg-blue-50">{q.qty20||"—"}</td>
                           <td className="px-3 py-2 text-right bg-blue-50 font-medium">{q.freight20?parseFloat(q.freight20).toLocaleString():"—"}</td>
                           <td className="px-3 py-2 text-right bg-blue-50">{q.thc20?parseFloat(q.thc20).toLocaleString():"—"}</td>
                           <td className={`px-3 py-2 text-right bg-blue-100 font-bold ${is20?"text-green-700":"text-blue-800"}`}>{q.total20>0?q.total20.toLocaleString():"—"}</td>
-                          <td className="px-3 py-2 text-right bg-purple-50 text-gray-600">{q.qty40hq||"—"}</td>
+                          <td className="px-3 py-2 text-right bg-purple-50">{q.qty40hq||"—"}</td>
                           <td className="px-3 py-2 text-right bg-purple-50 font-medium">{q.freight40hq?parseFloat(q.freight40hq).toLocaleString():"—"}</td>
                           <td className="px-3 py-2 text-right bg-purple-50">{q.thc40hq?parseFloat(q.thc40hq).toLocaleString():"—"}</td>
                           <td className={`px-3 py-2 text-right bg-purple-100 font-bold ${is40?"text-green-700":"text-purple-800"}`}>{q.total40>0?q.total40.toLocaleString():"—"}</td>
@@ -470,17 +446,16 @@ ${sorted.map((q,i)=>{const isB=q.id===bestGrandId;return`<tr class="${isB?"best"
               <div className="text-center py-20 text-gray-400 bg-white rounded-2xl border">
                 <div className="text-5xl mb-3">🚢</div>
                 <p className="text-lg font-semibold">No quotes yet</p>
-                <p className="text-sm">Use AI Parser, + New, or promote a draft</p>
+                <p className="text-sm">Click ＋ New to get started</p>
               </div>
             )}
-
             {sorted.length>1&&(
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
                 {[
                   {label:"Best Grand Total",val:Math.min(...sorted.filter(q=>q.grand>0).map(q=>q.grand)).toLocaleString(),color:"text-green-700",icon:"🏆"},
-                  {label:"Best 20ft Total",val:Math.min(...sorted.filter(q=>q.total20>0).map(q=>q.total20)).toLocaleString(),color:"text-blue-700",icon:"📦"},
-                  {label:"Best 40HQ Total",val:Math.min(...sorted.filter(q=>q.total40>0).map(q=>q.total40)).toLocaleString(),color:"text-purple-700",icon:"🏗️"},
-                  {label:"Avg Grand Total",val:Math.round(sorted.filter(q=>q.grand>0).reduce((s,q)=>s+q.grand,0)/Math.max(sorted.filter(q=>q.grand>0).length,1)).toLocaleString(),color:"text-gray-600",icon:"📊"},
+                  {label:"Best 20ft",val:Math.min(...sorted.filter(q=>q.total20>0).map(q=>q.total20)).toLocaleString(),color:"text-blue-700",icon:"📦"},
+                  {label:"Best 40HQ",val:Math.min(...sorted.filter(q=>q.total40>0).map(q=>q.total40)).toLocaleString(),color:"text-purple-700",icon:"🏗️"},
+                  {label:"Avg Grand",val:Math.round(sorted.filter(q=>q.grand>0).reduce((s,q)=>s+q.grand,0)/Math.max(sorted.filter(q=>q.grand>0).length,1)).toLocaleString(),color:"text-gray-600",icon:"📊"},
                 ].map(({label,val,color,icon})=>(
                   <div key={label} className="bg-white rounded-xl shadow border border-gray-100 p-4 text-center">
                     <div className="text-xl mb-1">{icon}</div>
@@ -496,3 +471,8 @@ ${sorted.map((q,i)=>{const isB=q.id===bestGrandId;return`<tr class="${isB?"best"
     </div>
   );
 }
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
