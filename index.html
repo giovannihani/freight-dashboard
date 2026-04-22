@@ -124,7 +124,12 @@ function App(){
       });
       const data=await res.json();
       const text=data.candidates?.[0]?.content?.parts?.[0]?.text||"";
-      const arr=JSON.parse(text.replace(/```json|```/g,"").trim());
+      if(!text) throw new Error("empty");
+      const clean=text.replace(/```json/gi,"").replace(/```/g,"").trim();
+      const jsonStart=clean.indexOf("[");
+      const jsonEnd=clean.lastIndexOf("]");
+      if(jsonStart===-1||jsonEnd===-1) throw new Error("no array");
+      const arr=JSON.parse(clean.slice(jsonStart,jsonEnd+1));
       if(!Array.isArray(arr))throw new Error();
       setParsed(arr.map(q=>({...emptyForm,...q,id:Date.now()+Math.random(),total20:calcTotal(q,"20"),total40:calcTotal(q,"40"),grand:calcGrand(q)})));
     }catch{setParseError("Could not parse. Check your input or API key.");}
