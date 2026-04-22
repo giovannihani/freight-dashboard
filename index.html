@@ -117,14 +117,13 @@ function App(){
     if(!apiKey){setShowKeyInput(true);return;}
     setParsing(true);setParseError("");setParsed(null);
     try{
-      const res=await fetch("https://api.anthropic.com/v1/messages",{
+      const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,{
         method:"POST",
-        headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-        body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:1000,
-          messages:[{role:"user",content:`Extract freight quote data from the text and return ONLY a JSON array. Keys: forwarder, line, pol, pod, freight20, freight40hq, thc20, thc40hq, qty20, qty40hq, otherCharges, currency (default USD), etd (YYYY-MM-DD), cutoff (YYYY-MM-DD), validityDate (YYYY-MM-DD), freeDays, transitTime, remarks. Empty string if not found. Raw JSON only.\n\n${pasteText}`}]})
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({contents:[{parts:[{text:`Extract freight quote data from the text and return ONLY a JSON array. Keys: forwarder, line, pol, pod, freight20, freight40hq, thc20, thc40hq, qty20, qty40hq, otherCharges, currency (default USD), etd (YYYY-MM-DD), cutoff (YYYY-MM-DD), validityDate (YYYY-MM-DD), freeDays, transitTime, remarks. Empty string if not found. Raw JSON only.\n\n${pasteText}`}]}]})
       });
       const data=await res.json();
-      const text=data.content?.map(b=>b.text||"").join("")||"";
+      const text=data.candidates?.[0]?.content?.parts?.[0]?.text||"";
       const arr=JSON.parse(text.replace(/```json|```/g,"").trim());
       if(!Array.isArray(arr))throw new Error();
       setParsed(arr.map(q=>({...emptyForm,...q,id:Date.now()+Math.random(),total20:calcTotal(q,"20"),total40:calcTotal(q,"40"),grand:calcGrand(q)})));
@@ -223,9 +222,9 @@ function App(){
         {showKeyInput&&(
           <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
             <div className="bg-white rounded-2xl p-6 shadow-xl w-96">
-              <h2 className="text-base font-bold text-gray-800 mb-2">🔑 Enter Anthropic API Key</h2>
-              <p className="text-xs text-gray-500 mb-3">Required for AI Parser. Key is saved in your browser only.</p>
-              <input className={inp} type="password" placeholder="sk-ant-..." value={apiKey}
+              <h2 className="text-base font-bold text-gray-800 mb-2">🔑 Enter Gemini API Key</h2>
+              <p className="text-xs text-gray-500 mb-3">Free from aistudio.google.com — saved in your browser only.</p>
+              <input className={inp} type="password" placeholder="AIzaSy..." value={apiKey}
                 onChange={e=>setApiKey(e.target.value)}/>
               <div className="flex gap-2 mt-3">
                 <button onClick={()=>{localStorage.setItem("ai_api_key",apiKey);setShowKeyInput(false);handleParse();}}
